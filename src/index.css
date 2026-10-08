@@ -1,0 +1,145 @@
+@import 'tailwindcss';
+
+/* ---------- Fonts (self-hosted, latin subset) ---------- */
+@font-face { font-family: 'Plus Jakarta Sans'; src: url('./assets/fonts/plus-jakarta-sans-latin-wght-normal.woff2') format('woff2'); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: 'Playfair Display'; src: url('./assets/fonts/playfair-display-latin-wght-normal.woff2') format('woff2'); font-weight: 400 900; font-display: swap; }
+@font-face { font-family: 'Playfair Display'; src: url('./assets/fonts/playfair-display-latin-wght-italic.woff2') format('woff2'); font-weight: 400 900; font-style: italic; font-display: swap; }
+@font-face { font-family: 'Montserrat'; src: url('./assets/fonts/montserrat-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'DM Sans'; src: url('./assets/fonts/dm-sans-latin-wght-normal.woff2') format('woff2'); font-weight: 100 1000; font-display: swap; }
+@font-face { font-family: 'DM Serif Display'; src: url('./assets/fonts/dm-serif-display-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'DM Serif Display'; src: url('./assets/fonts/dm-serif-display-latin-400-italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
+
+/* ---------- Design tokens ----------
+   Layout concept: navy sidebar + airy mint-tinted canvas; white cards; one teal CTA per view. */
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-display: 'Montserrat', 'Plus Jakarta Sans', ui-sans-serif, sans-serif;
+
+  --color-ink: #0b1a24;
+  --color-ink-2: #102330;
+  --color-ink-3: #183242;
+
+  --color-brand-50: #ecfbf6;
+  --color-brand-100: #d3f5ea;
+  --color-brand-200: #a8ead5;
+  --color-brand-300: #6fdcbc;
+  --color-brand-400: #2fca9e;
+  --color-brand-500: #12b386;
+  --color-brand-600: #0b936f;
+  --color-brand-700: #0b765b;
+  --color-brand-800: #0c5f4a;
+  --color-brand-900: #0b4d3d;
+
+  --color-mint: #1ee0a8;
+  --color-canvas: #f5f8f7;
+  --color-line: #e3eae7;
+
+  --color-slate-50: #f7f9f9;
+  --color-slate-100: #eef2f2;
+  --color-slate-200: #e1e7e7;
+  --color-slate-300: #c9d2d3;
+  --color-slate-400: #97a4a7;
+  --color-slate-500: #6b7a7e;
+  --color-slate-600: #4f5d62;
+  --color-slate-700: #3a464b;
+  --color-slate-800: #243036;
+  --color-slate-900: #141d22;
+
+  --shadow-card: 0 1px 2px rgb(11 26 36 / 0.04), 0 4px 16px rgb(11 26 36 / 0.05);
+  --shadow-pop: 0 10px 40px -10px rgb(11 26 36 / 0.25);
+  --shadow-cta: 0 8px 24px -8px rgb(11 118 91 / 0.55);
+
+  --animate-fade-in: fade-in 0.35s ease both;
+  --animate-rise: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-scale-in: scale-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop: pop 0.28s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+  --animate-float: float 6s ease-in-out infinite;
+  --ease-out-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+@keyframes shimmer { from { background-position: -400px 0 } to { background-position: 400px 0 } }
+@keyframes scale-in { from { opacity: 0; transform: translateY(8px) scale(0.97) } to { opacity: 1; transform: none } }
+@keyframes pop { from { transform: scale(0.4); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+@keyframes float { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
+@keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+@keyframes gradient-pan { from { background-position: 0% 50% } to { background-position: 200% 50% } }
+@keyframes sheen { from { transform: translateX(-120%) skewX(-18deg) } to { transform: translateX(260%) skewX(-18deg) } }
+@keyframes orbit { from { transform: rotate(0deg) translateX(46px) rotate(0deg) } to { transform: rotate(360deg) translateX(46px) rotate(-360deg) } }
+@keyframes grow-x { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+
+@layer base {
+  :root { color-scheme: light; }
+  html, body { background: var(--color-canvas); color: var(--color-ink); }
+  body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  h1, h2, h3 { text-wrap: balance; }
+  ::selection { background: var(--color-brand-200); }
+  :focus-visible { outline: 2px solid var(--color-brand-500); outline-offset: 2px; }
+  /* grid/flex children may shrink below their content (prevents horizontal page overflow on phones) */
+  .grid > *, .flex > * { min-width: 0; }
+}
+
+/* ---------- Motion ----------
+   Entrance: staggered rise. Scroll: elements below the fold start hidden only once JS has checked
+   they are off-screen (the first frame is always complete), then reveal as they enter. */
+.stagger > * { animation: rise 0.7s var(--ease-out-soft) both; animation-delay: 60ms; }
+.stagger > :nth-child(2) { animation-delay: 140ms; }
+.stagger > :nth-child(3) { animation-delay: 220ms; }
+.stagger > :nth-child(4) { animation-delay: 300ms; }
+.stagger > :nth-child(5) { animation-delay: 380ms; }
+.stagger > :nth-child(6) { animation-delay: 460ms; }
+.stagger > :nth-child(7) { animation-delay: 540ms; }
+.stagger > :nth-child(8) { animation-delay: 620ms; }
+[data-reveal='hidden'] { opacity: 0; transform: translateY(28px); }
+[data-reveal='shown'] { opacity: 1; transform: none; transition: opacity 0.8s var(--ease-out-soft) var(--d, 0ms), transform 0.8s var(--ease-out-soft) var(--d, 0ms); }
+
+.marquee { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.marquee-track { display: flex; width: max-content; animation: marquee var(--dur, 48s) linear infinite; }
+.marquee-track.reverse { animation-direction: reverse; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+
+.text-gradient-animated {
+  background: linear-gradient(90deg, #0b936f, #1ee0a8, #12b386, #0b936f);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: gradient-pan 6s linear infinite;
+}
+
+.btn-sheen { position: relative; overflow: hidden; isolation: isolate; }
+.btn-sheen::after {
+  content: ''; position: absolute; inset: 0; width: 40%; z-index: -1;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+}
+.btn-sheen:hover::after { animation: sheen 0.9s var(--ease-out-soft); }
+
+.lift { transition: transform 0.35s var(--ease-out-soft), box-shadow 0.35s var(--ease-out-soft), border-color 0.2s; }
+.lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-pop); }
+
+.accordion { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.35s var(--ease-out-soft); }
+.accordion[data-open='true'] { grid-template-rows: 1fr; }
+.accordion > div { overflow: hidden; }
+
+.scroll-thin { scrollbar-width: thin; scrollbar-color: var(--color-slate-300) transparent; }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.skeleton {
+  background: linear-gradient(90deg, #eef2f2 0, #f7faf9 40%, #eef2f2 80%);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+}
+
+.text-gradient-brand {
+  background: linear-gradient(90deg, #12b386, #1ee0a8 60%, #0b936f);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .marquee-track, .text-gradient-animated { animation: none !important; }
+  [data-reveal='hidden'] { opacity: 1; transform: none; }
+}
