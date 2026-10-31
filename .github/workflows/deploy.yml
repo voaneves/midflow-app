@@ -92,12 +92,20 @@ jobs:
 
       - name: Smoke test
         if: steps.cf.outputs.ready == 'true'
+        # Cloudflare's bot protection often answers 403 to datacenter IPs (like GitHub's runners),
+        # so a 403 here is a warning, not a failure. Real visitors are not affected.
         run: |
           sleep 5
-          curl -fsS https://voaneves.com/midflow-app/api/health
-          echo
-          curl -fsS https://voaneves.com/midflow-app/api/status | tee status.json
-          grep -q '"aiEnabled":true' status.json || echo "::warning::API is up but AI is off — check GEMINI_API_KEY secret."
+          code=$(curl -s -o status.json -w '%{http_code}' https://voaneves.com/midflow-app/api/status)
+          if [ "$code" = "403" ]; then
+            echo "::warning::Smoke test blocked by Cloudflare bot protection (403). Check manually: https://voaneves.com/midflow-app/api/status"
+          elif [ "$code" != "200" ]; then
+            echo "::error::API answered HTTP $code"; cat status.json; exit 1
+          elif grep -q '"aiEnabled":true' status.json; then
+            echo "::notice::API online with AI enabled."; cat status.json
+          else
+            echo "::warning::API is up but AI is off — check the GEMINI_API_KEY secret."; cat status.json
+          fi
 
   site:
     needs: checks
