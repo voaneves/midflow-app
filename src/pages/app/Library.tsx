@@ -1,9 +1,10 @@
-import { Copy, Download, FolderOpen, PenSquare, Search, Trash2, X } from 'lucide-react'
+import { CalendarDays, Copy, Download, FolderOpen, PenSquare, Search, Share2, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../components/creative/Creative'
 import { Editor } from '../../components/creative/Editor'
 import { CreativeTile, exportCreatives, jobFor, useLook } from '../../components/creative/parts'
+import { SocialPublishModal } from '../../components/creative/SocialPublishModal'
 import { Button, Empty, Input, Modal, Tabs, toast } from '../../components/ui'
 import { copyText } from '../../lib/export'
 import { useApp } from '../../lib/store'
@@ -14,6 +15,7 @@ export function Library() {
   const library = useApp((s) => s.library)
   const remove = useApp((s) => s.removeFromLibrary)
   const updateCreative = useApp((s) => s.updateCreative)
+  const scheduleCreative = useApp((s) => s.scheduleCreative)
   const { brand } = useLook()
   const [kind, setKind] = useState<'all' | 'post' | 'story'>('all')
   const [q, setQ] = useState('')
@@ -21,6 +23,7 @@ export function Library() {
   const [view, setView] = useState<LibraryItem | null>(null)
   const [edit, setEdit] = useState<LibraryItem | null>(null)
   const [confirm, setConfirm] = useState<string[] | null>(null)
+  const [publishItem, setPublishItem] = useState<LibraryItem | null>(null)
 
   const items = useMemo(
     () =>
@@ -105,7 +108,33 @@ export function Library() {
               onDownload={() => download([l])}
               compact
               menu={[
-                { label: 'Copiar legenda', icon: <Copy className="size-4" />, onClick: async () => (await copyText(`${l.creative.caption}\n\n${l.creative.hashtags.join(' ')}`)) && toast('Legenda copiada') },
+                {
+                  label: 'Publicar / Assistente',
+                  icon: <Share2 className="size-4 text-brand-600" />,
+                  onClick: () => setPublishItem(l),
+                },
+                {
+                  label: 'Agendar no Calendário',
+                  icon: <CalendarDays className="size-4 text-brand-600" />,
+                  onClick: () => {
+                    scheduleCreative({
+                      date: new Date().toISOString().slice(0, 10),
+                      time: '18:30',
+                      creative: l.creative,
+                      style: l.style,
+                      palette: l.palette,
+                      format: l.postFormat,
+                      themeLabel: l.themeLabel,
+                    })
+                    toast('Criativo adicionado ao Calendário!')
+                    nav('/app/calendario')
+                  },
+                },
+                {
+                  label: 'Copiar legenda',
+                  icon: <Copy className="size-4" />,
+                  onClick: async () => (await copyText(`${l.creative.caption}\n\n${l.creative.hashtags.join(' ')}`)) && toast('Legenda copiada'),
+                },
                 { label: 'Remover', icon: <Trash2 className="size-4" />, onClick: () => setConfirm([l.id]), danger: true },
               ]}
             />
@@ -128,7 +157,29 @@ export function Library() {
               <p className="mt-2 rounded-xl bg-slate-50 p-4 text-sm leading-relaxed whitespace-pre-line text-slate-700">{view.creative.caption}</p>
               <p className="mt-3 text-sm font-medium text-brand-700">{view.creative.hashtags.join(' ')}</p>
               <div className="mt-6 flex flex-wrap gap-2">
-                <Button onClick={() => download([view])}>
+                <Button onClick={() => setPublishItem(view)}>
+                  <Share2 className="size-4" /> Publicar agora
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    scheduleCreative({
+                      date: new Date().toISOString().slice(0, 10),
+                      time: '18:30',
+                      creative: view.creative,
+                      style: view.style,
+                      palette: view.palette,
+                      format: view.postFormat,
+                      themeLabel: view.themeLabel,
+                    })
+                    toast('Agendado no Calendário!')
+                    setView(null)
+                    nav('/app/calendario')
+                  }}
+                >
+                  <CalendarDays className="size-4" /> Agendar
+                </Button>
+                <Button variant="secondary" onClick={() => download([view])}>
                   <Download className="size-4" /> Baixar PNG
                 </Button>
                 <Button variant="secondary" onClick={async () => (await copyText(`${view.creative.caption}\n\n${view.creative.hashtags.join(' ')}`)) && toast('Legenda copiada')}>
@@ -139,6 +190,29 @@ export function Library() {
           </div>
         )}
       </Modal>
+
+      {publishItem && (
+        <SocialPublishModal
+          open={!!publishItem}
+          creative={publishItem.creative}
+          look={lookOf(publishItem)}
+          onClose={() => setPublishItem(null)}
+          onSchedule={() => {
+            scheduleCreative({
+              date: new Date().toISOString().slice(0, 10),
+              time: '18:30',
+              creative: publishItem.creative,
+              style: publishItem.style,
+              palette: publishItem.palette,
+              format: publishItem.postFormat,
+              themeLabel: publishItem.themeLabel,
+            })
+            setPublishItem(null)
+            toast('Conteúdo agendado no Calendário!')
+            nav('/app/calendario')
+          }}
+        />
+      )}
 
       <Editor
         open={!!edit}

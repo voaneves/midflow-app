@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarDays, ChevronDown, CreditCard, Crown, FileText, FolderOpen, Home, LogOut, Menu, PenSquare, Settings, Sparkles, Store, X } from 'lucide-react'
+import { BarChart3, Bell, CalendarDays, Check, ChevronDown, CreditCard, Crown, FileText, FolderOpen, Home, LogOut, Menu, PenSquare, Settings, Sparkles, Store, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { planDef } from '../lib/data'
@@ -21,12 +21,12 @@ const NAV = [
 const TITLES: [RegExp, string, string][] = [
   [/^\/app\/criar/, 'Criar conteúdo', 'Preencha o briefing e gere posts e stories personalizados para a sua marca.'],
   [/^\/app\/posts/, 'Meus posts', 'Todas as gerações, com as versões que a IA criou para você.'],
+  [/^\/app\/calendario/, 'Calendário Editorial', 'Planeje datas, agende publicações e visualize seu mês com datas comemorativas.'],
   [/^\/app\/biblioteca/, 'Biblioteca', 'Criativos salvos, prontos para baixar e publicar.'],
   [/^\/app\/marca/, 'Minha marca', 'A identidade que a MIDFLOW usa em cada conteúdo.'],
+  [/^\/app\/relatorios/, 'Relatórios & Desempenho', 'Acompanhe frequência, distribuição de formatos e checklist de crescimento.'],
   [/^\/app\/planos/, 'Planos', 'Escolha o ritmo de conteúdo ideal para o seu negócio.'],
-  [/^\/app\/config/, 'Configurações', 'Conta, notificações e dados do protótipo.'],
-  [/^\/app\/calendario/, 'Calendário', 'Organize seus conteúdos por data.'],
-  [/^\/app\/relatorios/, 'Relatórios', 'Acompanhe o desempenho do que você publica.'],
+  [/^\/app\/config/, 'Configurações', 'Conta, preferências de IA, notificações e integrações.'],
   [/^\/app/, 'Dashboard', 'Seu conteúdo da semana começa aqui.'],
 ]
 
@@ -83,6 +83,8 @@ function ProfileMenu() {
   const ref = useRef<HTMLDivElement>(null)
   const user = useApp((s) => s.user)
   const brand = useApp((s) => s.brand)
+  const brands = useApp((s) => s.brands)
+  const switchBrand = useApp((s) => s.switchBrand)
   const logout = useApp((s) => s.logout)
   const loadDemo = useApp((s) => s.loadDemo)
   const nav = useNavigate()
@@ -94,8 +96,8 @@ function ProfileMenu() {
   const initials = (user?.name ?? 'U').split(' ').map((w) => w[0]).slice(0, 2).join('')
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-3 rounded-xl py-1 pr-1 pl-1 hover:bg-slate-100 sm:pr-2">
-        <span className="grid size-10 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-600 to-ink text-sm font-bold text-white">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-3 rounded-xl py-1 pr-1 pl-1 hover:bg-slate-100 sm:pr-2" aria-label="Menu do perfil">
+        <span className="grid size-10 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-brand-600 to-ink text-sm font-bold text-white ring-2 ring-brand-100">
           {brand.logo ? <img src={brand.logo} alt="" className="size-full bg-white object-contain p-1" /> : initials}
         </span>
         <span className="hidden text-left leading-tight sm:block">
@@ -105,17 +107,55 @@ function ProfileMenu() {
         <ChevronDown className="hidden size-4 text-slate-400 sm:block" />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-2xl border border-line bg-white py-1.5 shadow-pop animate-fade-in">
+        <div className="absolute right-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-line bg-white py-1.5 shadow-pop animate-fade-in">
           <div className="border-b border-line px-4 py-3">
-            <div className="text-sm font-semibold">{user?.name}</div>
+            <div className="text-sm font-semibold text-ink">{user?.name}</div>
             <div className="truncate text-xs text-slate-500">{user?.email}</div>
           </div>
+
+          {/* Seletor de Perfis de Marca */}
+          <div className="border-b border-line bg-slate-50/75 px-3 py-2.5">
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <span>Empresas ({brands?.length || 1})</span>
+              <button
+                onClick={() => {
+                  setOpen(false)
+                  nav('/app/marca')
+                }}
+                className="text-brand-700 hover:text-brand-800"
+              >
+                Gerenciar
+              </button>
+            </div>
+            <div className="mt-1.5 max-h-36 space-y-1 overflow-y-auto scroll-thin">
+              {(brands || [brand]).map((b) => {
+                const isActive = b.id === brand.id
+                return (
+                  <button
+                    key={b.id || b.name}
+                    onClick={() => {
+                      if (b.id) switchBrand(b.id)
+                      setOpen(false)
+                    }}
+                    className={cx(
+                      'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition',
+                      isActive ? 'bg-white text-brand-800 font-bold shadow-xs ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80 hover:text-slate-900',
+                    )}
+                  >
+                    <span className="truncate">{b.name}</span>
+                    {isActive && <Check className="size-3.5 text-brand-600" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {[
             ['Minha marca', '/app/marca'],
             ['Planos', '/app/planos'],
             ['Configurações', '/app/config'],
           ].map(([l, to]) => (
-            <button key={to} onClick={() => (setOpen(false), nav(to))} className="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">
+            <button key={to} onClick={() => (setOpen(false), nav(to))} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">
               {l}
             </button>
           ))}
@@ -178,6 +218,46 @@ function Notifications() {
   )
 }
 
+function BottomNav() {
+  const items = [
+    { to: '/app', label: 'Início', icon: Home, end: true },
+    { to: '/app/posts', label: 'Posts', icon: FileText },
+    { to: '/app/criar', label: 'Criar', icon: PenSquare, primary: true },
+    { to: '/app/calendario', label: 'Calendário', icon: CalendarDays },
+    { to: '/app/biblioteca', label: 'Salvos', icon: FolderOpen },
+  ]
+
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-line bg-white/95 px-2 py-1.5 pb-[calc(0.4rem+env(safe-area-inset-bottom,0px))] backdrop-blur-md lg:hidden"
+      aria-label="Navegação móvel"
+    >
+      {items.map(({ to, label, icon: I, end, primary }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          className={({ isActive }) =>
+            cx(
+              'flex flex-col items-center justify-center rounded-xl px-3 py-1 text-[11px] font-medium transition',
+              primary
+                ? isActive
+                  ? 'bg-brand-700 text-white shadow-sm font-bold'
+                  : 'bg-brand-600 text-white font-bold shadow-xs'
+                : isActive
+                  ? 'text-brand-700 font-bold'
+                  : 'text-slate-500 hover:text-slate-900',
+            )
+          }
+        >
+          <I className={cx('size-5', primary && 'size-4')} strokeWidth={primary ? 2.2 : 1.8} />
+          <span className="mt-0.5 leading-none">{label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
+
 export function AppLayout() {
   const loc = useLocation()
   const [drawer, setDrawer] = useState(false)
@@ -216,11 +296,12 @@ export function AppLayout() {
           <ProfileMenu />
         </div>
       </header>
-      <main id="main" className="px-4 py-5 sm:px-6 sm:py-6 xl:px-8">
+      <main id="main" className="px-4 py-5 pb-24 sm:px-6 sm:py-6 lg:pb-8 xl:px-8">
         <div key={loc.pathname.split('/').slice(0, 3).join('/')} className="animate-rise">
           <Outlet />
         </div>
       </main>
+      <BottomNav />
       <ExportHost />
     </div>
   )

@@ -7,22 +7,22 @@ See **[plan.md](plan.md)** for the full plan and **`references/`** for the clien
 
 ```bash
 npm install
-npm run dev            # http://localhost:5173
-npm run build          # static site → dist/
-npm run build:single   # one self-contained file → dist-single/index.html
+cp .env.example .env     # set GEMINI_API_KEY (server-side only)
+npm run dev              # http://localhost:5173 — front-end + /api
+npm run build && npm start   # production server on :3000
+npm test                 # quality-gate tests
+npm run eval             # real-model quality evaluation
 ```
 
+**Production / POC operations (Portuguese): see [PRODUCAO.md](PRODUCAO.md)** — deploy (Docker), quality pipeline, POC metrics, security, what is still missing.
+
 Shortcut: on the landing page click **Ver demonstração** to open the pre-filled beauty-salon account (Studio Aurora).
-Dev-only visual QA page: `http://localhost:5173/#/dev/galeria` (every style × every creative; `?s=alimentacao&c=3B1F12,C8642B,F2B26B,FBF1E4` to try another segment/palette).
 
-## Deploy (GitHub Pages)
+## Deploy
 
-`.github/workflows/deploy.yml` builds and publishes on every push to `main`:
-`npm ci` → `npm run lint` → `npm run build` → upload `dist/` → GitHub Pages.
-
-One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-The site is served at `https://<user>.github.io/<repo>/` — the app uses relative asset paths and hash routing, so no extra config is needed for the sub-path.
-`.github/workflows/ci.yml` runs the same checks on pull requests.
+- Every push to `main` runs `.github/workflows/deploy.yml`: checks → API as a Cloudflare Worker (`voaneves.com/midflow-app/api/*`, secrets from GitHub Secrets) → site on GitHub Pages (no secrets). Setup: PRODUCAO.md §3.1.
+- Alternative: one Node server / Docker for both — PRODUCAO.md §3.2.
+- `.github/workflows/ci.yml` runs lint, tests and build on pull requests.
 
 ## Stack
 
@@ -34,7 +34,9 @@ Motion is plain CSS (`src/index.css` → *Motion*) plus `src/components/motion.t
 | Path | What |
 |---|---|
 | `src/lib/data.ts` | Segments, theme catalog (copy banks), styles, tones, objectives, plans |
-| `src/lib/generator.ts` | The simulated "AI" — swap for a real API in the MVP (same inputs/outputs) |
+| `server/ai/*` | AI pipeline: prompt + schema, model call with retries, quality gate, repair round |
+| `server/routes.ts`, `server/server.ts` | API (generate, rewrite, image, feedback, metrics) and production server |
+| `src/lib/generator.ts` | Offline template generator (used only when no server is reachable) |
 | `src/lib/store.ts` | App state (brand, briefing, content, style, generations, library, plan) + demo seed |
 | `src/lib/color.ts` | Brand colors → role palette (dark/mid/soft/light/accent) |
 | `src/components/creative/Creative.tsx` | The renderer: any post/story in any of the 6 styles × 3 formats, drawn on a 1080-px canvas |
@@ -45,8 +47,6 @@ Motion is plain CSS (`src/index.css` → *Motion*) plus `src/components/motion.t
 | `src/pages/app/*` | Dashboard, Meus posts, Biblioteca, Minha marca, Planos, Configurações, Calendário/Relatórios (preview) |
 | `src/assets/photos` | Photos cropped from the client's mockups (placeholder imagery) |
 
-## Prototype limits
+## Limits
 
-- No backend: auth, payments and AI are simulated; data lives in the browser.
-- Photos are low-resolution crops from the mockups — fine for validation, to be replaced by uploads / stock / AI images.
-- Plan limits (20 / 60 / 150 contents) are placeholders until validated.
+See PRODUCAO.md §7 (auth, billing, Instagram publishing and multi-device data are not implemented yet).

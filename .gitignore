@@ -1,6 +1,18 @@
 node_modules
 dist
 dist-single
+.env
+.env.*
+!.env.example
 *.local
 .DS_Store
 pode_apagar/
+# runtime data (events, caches, eval results) — contains client data
+server/data/
+
+# personal scratch files (test images, experiments)
+scratch/
+
+# Cloudflare Worker local secrets / build cache
+.dev.vars
+.wrangler/

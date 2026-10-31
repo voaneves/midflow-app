@@ -45,7 +45,7 @@ export function Step3Style() {
   const next = () => {
     if (!content.posts && !content.stories) return toast('Escolha ao menos um formato', 'info')
     markDone(3)
-    nav('/app/criar/4')
+    nav('/app/criar/4', { state: { autoGenerate: true } })
   }
 
   return (
@@ -171,7 +171,12 @@ export function Step3Style() {
               )
             })}
           </div>
-          {st.imageType !== 'fotos' && <p className="mt-2 text-xs text-slate-500">Neste protótipo as artes usam fotos reais. Ilustrações e imagens geradas por IA entram no MVP.</p>}
+          <p className="mt-2 text-xs text-slate-500">
+            {st.imageType === 'fotos' && 'Fotografia editorial realista gerada e selecionada por IA de acordo com o tema de cada post.'}
+            {st.imageType === 'ilustracoes' && 'Arte vetorial editorial com formas orgânicas e a paleta de cores da sua marca.'}
+            {st.imageType === 'render' && 'Composição 3D Studio Render moderna gerada por IA com iluminação suave.'}
+            {st.imageType === 'misto' && 'Combinação estratégica entre fotografia editorial realista e composições gráficas 3D.'}
+          </p>
         </div>
 
         <div className="mt-7">

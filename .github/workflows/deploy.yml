@@ -1,6 +1,21 @@
-# Builds the prototype and publishes it to GitHub Pages.
-# One-time setup: repo → Settings → Pages → Build and deployment → Source: "GitHub Actions".
-name: Deploy to GitHub Pages
+# One push to main publishes everything:
+#
+#   1. checks  → lint, tests, type-check
+#   2. api     → Cloudflare Worker "midflow-api" at https://voaneves.com/midflow-app/api/*
+#                The AI keys live ONLY here, as Worker secrets copied from GitHub Secrets.
+#   3. site    → GitHub Pages (voaneves.com/midflow-app). The build contains NO keys;
+#                it just calls /midflow-app/api on the same domain.
+#
+# GitHub → Settings → Secrets and variables → Actions → Secrets (one-time):
+#   CLOUDFLARE_API_TOKEN   token to deploy the Worker (template "Edit Cloudflare Workers")
+#   CLOUDFLARE_ACCOUNT_ID  Cloudflare account ID (also used for Workers AI images)
+#   GEMINI_API_KEY         Google AI Studio key — text
+#   CF_AI_TOKEN            Cloudflare token with "Workers AI" permission — images
+#   ADMIN_TOKEN            any long random string — protects /api/admin/metrics
+#
+# Without CLOUDFLARE_API_TOKEN the api job is skipped (with a warning) and the site
+# still deploys; it then runs as an offline demo, clearly labeled in the app.
+name: Deploy (API on Cloudflare + site on GitHub Pages)
 
 on:
   push:
@@ -12,37 +27,104 @@ permissions:
   pages: write
   id-token: write
 
-# Only one deploy at a time; a newer push cancels a queued one.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy
+  cancel-in-progress: false
 
 jobs:
-  build:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-
       - run: npm ci
       - run: npm run lint
-      - run: npm run build # type-check (tsc -b) + vite build → dist/
+      - run: npm test
+      - run: npm run typecheck
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+  api:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Cloudflare credentials
+        id: cf
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN not set — API not deployed; the site will run as an offline demo."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cf.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cf.outputs.ready == 'true'
         with:
-          path: dist
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        if: steps.cf.outputs.ready == 'true'
 
-  deploy:
-    needs: build
+      - name: Deploy Worker + secrets
+        if: steps.cf.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          # Names only; values come from env below and are stored encrypted in Cloudflare.
+          secrets: |
+            GEMINI_API_KEY
+            CF_AI_ACCOUNT_ID
+            CF_AI_TOKEN
+            ADMIN_TOKEN
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CF_AI_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+
+      - name: Smoke test
+        if: steps.cf.outputs.ready == 'true'
+        run: |
+          sleep 5
+          curl -fsS https://voaneves.com/midflow-app/api/health
+          echo
+          curl -fsS https://voaneves.com/midflow-app/api/status | tee status.json
+          grep -q '"aiEnabled":true' status.json || echo "::warning::API is up but AI is off — check GEMINI_API_KEY secret."
+
+  site:
+    needs: checks
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Build
+        env:
+          # Same-origin path of the API (the Worker route). Not a secret.
+          VITE_API_URL: /midflow-app
+        run: npm run build
+
+      # Hash routing → every path works; 404.html covers direct hits on unknown paths.
+      - run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -1,0 +1,5 @@
+# Local secrets for `npm run worker:dev` (copy to .dev.vars — git-ignored). Same values as .env.
+GEMINI_API_KEY=
+CF_AI_ACCOUNT_ID=
+CF_AI_TOKEN=
+ADMIN_TOKEN=

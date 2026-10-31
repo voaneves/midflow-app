@@ -3,12 +3,13 @@ import { AppLayout } from './components/AppLayout'
 import { Toaster } from './components/ui'
 import { useApp } from './lib/store'
 import { Brand } from './pages/app/Brand'
-import { ComingSoon } from './pages/app/ComingSoon'
+import { CalendarPage } from './pages/app/CalendarPage'
 import { Create } from './pages/app/create/Create'
 import { Dashboard } from './pages/app/Dashboard'
 import { Library } from './pages/app/Library'
 import { Plans } from './pages/app/Plans'
 import { Posts } from './pages/app/Posts'
+import { ReportsPage } from './pages/app/ReportsPage'
 import { Settings } from './pages/app/Settings'
 import { Auth } from './pages/Auth'
 import { Landing } from './pages/Landing'
@@ -40,8 +41,8 @@ const routes = [
           { path: 'marca', element: <Brand /> },
           { path: 'planos', element: <Plans /> },
           { path: 'config', element: <Settings /> },
-          { path: 'calendario', element: <ComingSoon kind="calendario" /> },
-          { path: 'relatorios', element: <ComingSoon kind="relatorios" /> },
+          { path: 'calendario', element: <CalendarPage /> },
+          { path: 'relatorios', element: <ReportsPage /> },
         ],
       },
     ],

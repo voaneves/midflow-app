@@ -120,7 +120,7 @@ export function Plans() {
           </table>
         </div>
       </Card>
-      <p className="mt-4 text-center text-xs text-slate-400">Valores e limites em validação. Protótipo: nenhuma cobrança é feita.</p>
+      <p className="mt-4 text-center text-xs text-slate-500">Cobrança transparente e flexível. Mude de plano ou cancele quando quiser sem multas ou taxas de fidelidade.</p>
 
       <Modal open={!!checkout} onClose={() => setCheckout(null)} title={checkout ? `Assinar o plano ${checkout.name}` : ''}>
         {checkout && (

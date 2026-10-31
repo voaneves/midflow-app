@@ -4,7 +4,7 @@ import {
   PawPrint, Quote, Scissors, Send, Shield, Smile, Sparkles, Star, Sun, TrendingUp, User, Utensils, Zap,
 } from 'lucide-react'
 import { alpha, luminance, mix, readableOn, saturation } from '../../lib/color'
-import { photoFocus, photoUrl } from '../../lib/photos'
+import { photoFocus, PHOTOS, photoUrl } from '../../lib/photos'
 import type { Creative as CreativeT, Palette, PostFormat, StyleId } from '../../lib/types'
 
 /* Every creative is designed on a 1080-wide canvas and scaled to whatever size it is shown at,
@@ -218,9 +218,36 @@ function Cta({ text, look }: { text: string; look: Look }) {
 }
 
 function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
-  const url = photoUrl(id)
+  const primaryUrl = photoUrl(id)
+  const [fallbackUsed, setFallbackUsed] = useState(false)
+  useEffect(() => {
+    setFallbackUsed(false)
+  }, [id])
+
+  let fallbackUrl: string | undefined
+  if (id && id.startsWith('/api/image')) {
+    try {
+      const q = new URLSearchParams(id.split('?')[1] || '')
+      const fb = q.get('fallback')
+      if (fb && PHOTOS[fb]) fallbackUrl = PHOTOS[fb]
+    } catch {
+      // ignore
+    }
+  }
+
+  const url = fallbackUsed && fallbackUrl ? fallbackUrl : primaryUrl
   if (!url) return <div style={{ background: 'linear-gradient(135deg,#d9e6e2,#b8cfc8)', ...style }} />
-  return <img src={url} alt="" crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: photoFocus(id), display: 'block', ...style }} />
+  return (
+    <img
+      src={url}
+      alt=""
+      crossOrigin="anonymous"
+      onError={() => {
+        if (!fallbackUsed && fallbackUrl) setFallbackUsed(true)
+      }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: photoFocus(id), display: 'block', ...style }}
+    />
+  )
 }
 
 function BrandCorner({ brand, look, light }: { brand: BrandMark; look: Look; light?: boolean }) {

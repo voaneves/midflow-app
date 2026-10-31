@@ -1,4 +1,4 @@
-# Checks pull requests: lint + type-check + build.
+# Checks pull requests (main is checked by deploy.yml): lint + type-check + tests + build.
 name: CI
 
 on:
@@ -11,8 +11,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build

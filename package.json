@@ -1,14 +1,23 @@
 {
   "name": "midflow-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:single": "tsc -b && vite build --mode single",
+    "start": "node --env-file-if-exists=.env server/server.ts",
+    "server": "node --env-file-if-exists=.env server/server.ts",
     "lint": "oxlint",
+    "typecheck": "tsc -b",
+    "test": "node --test server/tests/",
+    "eval": "node --env-file-if-exists=.env server/eval.ts",
     "preview": "vite preview",
-    "build:single": "tsc -b && vite build --mode single"
+    "check:ai": "node --env-file-if-exists=.env server/tools/check-ai.ts",
+    "check:image": "node --env-file-if-exists=.env server/tools/check-image.ts",
+    "worker:dev": "wrangler dev --local",
+    "worker:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
@@ -35,6 +44,14 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
-    "vite-plugin-singlefile": "^2.3.3"
+    "vite-plugin-singlefile": "^2.3.3",
+    "wrangler": "^4.156.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "allowScripts": {
+    "workerd@1.20261023.1": true,
+    "esbuild@0.28.2": true
   }
 }

@@ -53,6 +53,8 @@ export interface Creative {
   cta: string
   photo?: string
   photo2?: string
+  photoFocus?: string
+  photoZoom?: number
   caption: string
   hashtags: string[]
   /** per-creative overrides from the editor */
@@ -61,6 +63,7 @@ export interface Creative {
 }
 
 export interface Brand {
+  id?: string
   name: string
   handle: string
   segment: SegmentId
@@ -115,15 +118,21 @@ export interface GenParams {
   themeId: string
   customTheme?: string
   objective: ObjectiveId
+  objectiveOther?: string
   tones: ToneId[]
   style: StyleId
   palette: Palette
   postFormat: PostFormat
+  imageType?: ImageType
   posts: boolean
   stories: boolean
   brandName: string
   handle: string
   city: string
+  about?: string
+  audience?: string
+  topics?: string
+  references?: string
   seed: number
 }
 
@@ -135,6 +144,14 @@ export interface Generation {
   params: GenParams
   posts: Creative[]
   stories: Creative[]
+  /** 'gemini' | 'openai' = real AI; 'template' = server fallback; 'local' = no server */
+  engine?: string
+  model?: string
+  /** Score from the server quality gate (0–100) */
+  quality?: { score: number; passed: boolean; repaired?: boolean }
+  /** Why the AI was not used (only for template generations) */
+  aiError?: string
+  processingTimeMs?: number
 }
 
 export interface LibraryItem {
@@ -146,3 +163,21 @@ export interface LibraryItem {
   postFormat: PostFormat
   themeLabel: string
 }
+
+export type ScheduledStatus = 'agendado' | 'pronto' | 'publicado' | 'cancelado'
+
+export interface ScheduledPost {
+  id: string
+  date: string // YYYY-MM-DD
+  time: string // HH:mm
+  status: ScheduledStatus
+  creative: Creative
+  style: StyleId
+  palette: Palette
+  postFormat: PostFormat
+  themeLabel: string
+  notes?: string
+  publishedAt?: number
+  socialNetwork?: 'instagram' | 'whatsapp' | 'facebook' | 'todas'
+}
+

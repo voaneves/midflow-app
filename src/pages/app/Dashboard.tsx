@@ -108,9 +108,12 @@ export function Dashboard() {
           <div className="mt-1 text-3xl font-extrabold tabular-nums">{generations.length}</div>
           <div className="mt-2 text-sm text-slate-500">Plano {p.name}</div>
         </Card>
-        <Card className="p-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <CalendarHeart className="size-4 text-brand-600" /> Próxima data
+        <Card className="cursor-pointer p-5 transition hover:border-brand-300 hover:shadow-xs" onClick={() => nav('/app/calendario')}>
+          <div className="flex items-center justify-between text-sm text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <CalendarHeart className="size-4 text-brand-600" /> Próxima data
+            </span>
+            <span className="text-xs font-semibold text-brand-700">Ver calendário →</span>
           </div>
           <div className="mt-1 text-xl font-extrabold">{special.label}</div>
           <div className="mt-1 text-sm text-slate-500 tabular-nums">

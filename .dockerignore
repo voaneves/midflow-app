@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-single
+.env
+.env.*
+server/data
+references
+scratch
+.github

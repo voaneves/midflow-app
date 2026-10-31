@@ -6,6 +6,7 @@ import { currentLook, useApp } from '../../lib/store'
 import type { Creative as CreativeT, Palette, PostFormat, StyleId } from '../../lib/types'
 import { Button, CheckBadge, cx, Modal, toast } from '../ui'
 import { Creative, type BrandMark } from './Creative'
+import { track } from '../../lib/telemetry'
 
 /* ---------- shared look ---------- */
 export function useLook() {
@@ -175,7 +176,10 @@ interface ExportState {
   jobs: ExportJob[]
 }
 let openExport: (jobs: ExportJob[]) => void = () => {}
-export const exportCreatives = (jobs: ExportJob[]) => openExport(jobs)
+export const exportCreatives = (jobs: ExportJob[]) => {
+  track('download', { count: jobs.length, brandName: jobs[0]?.brand.name })
+  openExport(jobs)
+}
 
 export function ExportHost() {
   const [st, setSt] = useState<ExportState>({ open: false, jobs: [] })

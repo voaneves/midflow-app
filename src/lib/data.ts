@@ -658,7 +658,7 @@ export const PLANS: PlanDef[] = [
     contents: 150,
     profiles: 5,
     variations: 4,
-    features: ['150 conteúdos por mês', 'Tudo do Pro', '4 variações por peça', 'Até 5 perfis de negócio', 'Suporte prioritário', 'Agendamento (em breve)'],
+    features: ['150 conteúdos por mês', 'Tudo do Pro', '4 variações por peça', 'Até 5 perfis de negócio', 'Suporte prioritário', 'Calendário Editorial & Agendamento'],
   },
 ]
 

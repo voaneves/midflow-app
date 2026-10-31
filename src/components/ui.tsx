@@ -39,8 +39,12 @@ export function Button({
 }
 
 /* ---------- Card ---------- */
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx('rounded-2xl border border-line bg-white shadow-card', className)}>{children}</div>
+export function Card({ className, children, onClick }: { className?: string; children: ReactNode; onClick?: () => void }) {
+  return (
+    <div onClick={onClick} className={cx('rounded-2xl border border-line bg-white shadow-card', className)}>
+      {children}
+    </div>
+  )
 }
 
 /* ---------- Form ---------- */
@@ -207,9 +211,9 @@ export function Modal({ open, onClose, children, className, title, wide }: { ope
 interface ToastItem {
   id: number
   text: string
-  tone: 'ok' | 'info'
+  tone: 'ok' | 'info' | 'error'
 }
-const useToasts = create<{ items: ToastItem[]; push: (t: string, tone?: 'ok' | 'info') => void; drop: (id: number) => void }>((set) => ({
+const useToasts = create<{ items: ToastItem[]; push: (t: string, tone?: 'ok' | 'info' | 'error') => void; drop: (id: number) => void }>((set) => ({
   items: [],
   push: (text, tone = 'ok') => {
     const id = Date.now() + Math.random()
@@ -218,7 +222,7 @@ const useToasts = create<{ items: ToastItem[]; push: (t: string, tone?: 'ok' | '
   },
   drop: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
 }))
-export const toast = (t: string, tone?: 'ok' | 'info') => useToasts.getState().push(t, tone)
+export const toast = (t: string, tone?: 'ok' | 'info' | 'error') => useToasts.getState().push(t, tone)
 
 export function Toaster() {
   const items = useToasts((s) => s.items)
@@ -226,8 +230,8 @@ export function Toaster() {
     <div className="pointer-events-none fixed right-4 bottom-4 z-[60] flex flex-col items-end gap-2" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-live="polite">
       {items.map((t) => (
         <div key={t.id} className="pointer-events-auto flex items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm font-medium text-white shadow-pop animate-rise">
-          <span className={cx('grid size-6 place-items-center rounded-full', t.tone === 'ok' ? 'bg-brand-500' : 'bg-slate-600')}>
-            <Check className="size-3.5" strokeWidth={3} />
+          <span className={cx('grid size-6 place-items-center rounded-full', t.tone === 'ok' ? 'bg-brand-500' : t.tone === 'error' ? 'bg-red-500' : 'bg-slate-600')}>
+            {t.tone === 'error' ? <X className="size-3.5" strokeWidth={3} /> : <Check className="size-3.5" strokeWidth={3} />}
           </span>
           {t.text}
         </div>

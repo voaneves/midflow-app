@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { toPng } from 'html-to-image'
 import JSZip from 'jszip'
 import { BASE_W, baseHeight, CreativeCanvas, type BrandMark } from '../components/creative/Creative'
+import { track } from './telemetry'
 import type { Creative, Palette, PostFormat, StyleId } from './types'
 
 export interface ExportJob {
@@ -23,18 +24,18 @@ export async function renderPng(job: ExportJob): Promise<string> {
   const root = createRoot(host)
   try {
     root.render(
-        createElement(
-          'div',
-          { style: { position: 'relative', width: BASE_W, height: H } },
-          createElement(CreativeCanvas, {
-            c: job.creative,
-            style: job.creative.style ?? job.style,
-            palette: job.creative.palette ?? job.palette,
-            H,
-            brand: job.brand,
-            chrome: false,
-          }),
-        ),
+      createElement(
+        'div',
+        { style: { position: 'relative', width: BASE_W, height: H } },
+        createElement(CreativeCanvas, {
+          c: job.creative,
+          style: job.creative.style ?? job.style,
+          palette: job.creative.palette ?? job.palette,
+          H,
+          brand: job.brand,
+          chrome: false,
+        }),
+      ),
     )
     await new Promise((r) => setTimeout(r, 60))
     await Promise.all(Array.from(host.querySelectorAll('img')).map((img) => img.decode().catch(() => undefined)))
@@ -47,9 +48,19 @@ export async function renderPng(job: ExportJob): Promise<string> {
   }
 }
 
-export async function makeZip(files: { name: string; dataUrl: string }[]) {
+export async function makeZip(
+  files: { name: string; dataUrl: string }[],
+  extraTextFiles?: { name: string; content: string }[],
+) {
   const zip = new JSZip()
-  for (const f of files) zip.file(f.name, f.dataUrl.split(',')[1], { base64: true })
+  for (const f of files) {
+    zip.file(f.name, f.dataUrl.split(',')[1], { base64: true })
+  }
+  if (extraTextFiles) {
+    for (const ef of extraTextFiles) {
+      zip.file(ef.name, ef.content)
+    }
+  }
   return zip.generateAsync({ type: 'blob' })
 }
 
@@ -65,10 +76,7 @@ type DownloadsNs = { save: (r: { filename: string; data: Blob }) => Promise<{ st
 type ClaudeHost = { use?: (name: string) => Promise<unknown> }
 
 /**
- * Saves a file. Inside the claude.ai artifact viewer the page can't download directly,
- * so it goes through the viewer's `downloads` capability (the viewer confirms the save);
- * everywhere else (local dev, any static host) it is a normal browser download.
- * Resolves to 'saved' | 'declined' | 'failed'.
+ * Saves a file.
  */
 export async function saveFile(filename: string, data: Blob): Promise<'saved' | 'declined' | 'failed'> {
   const host = (window as unknown as { claude?: ClaudeHost }).claude
@@ -101,7 +109,7 @@ export function triggerDownload(url: string, filename: string) {
 export function slug(s: string) {
   return s
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
@@ -109,6 +117,7 @@ export function slug(s: string) {
 }
 
 export async function copyText(text: string) {
+  track('copy_caption')
   try {
     await navigator.clipboard.writeText(text)
     return true
