@@ -11,7 +11,7 @@
     "server": "node --env-file-if-exists=.env server/server.ts",
     "lint": "oxlint",
     "typecheck": "tsc -b",
-    "test": "node --test server/tests/",
+    "test": "node --test \"server/tests/*.test.ts\"",
     "eval": "node --env-file-if-exists=.env server/eval.ts",
     "preview": "vite preview",
     "check:ai": "node --env-file-if-exists=.env server/tools/check-ai.ts",
