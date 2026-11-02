@@ -16,3 +16,10 @@ scratch/
 # Cloudflare Worker local secrets / build cache
 .dev.vars
 .wrangler/
+
+# e2e artifacts
+test-results/
+playwright-report/
+docs/ux-baseline/screens/
+docs/ux-baseline/axe.json
+.lighthouseci/

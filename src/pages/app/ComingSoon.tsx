@@ -81,7 +81,7 @@ function Reports() {
           {[38, 52, 47, 66, 58, 74, 81, 92].map((h, i) => (
             <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
               <div className="w-full rounded-t-md bg-gradient-to-t from-brand-600 to-brand-300" style={{ height: `${h}%` }} />
-              <span className="text-[11px] text-slate-400">S{i + 1}</span>
+              <span className="text-xs text-slate-500">S{i + 1}</span>
             </div>
           ))}
         </div>

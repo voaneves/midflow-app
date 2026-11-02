@@ -35,7 +35,7 @@ function Visual() {
       </div>
       <div className="relative max-w-md">
         <p className="text-2xl leading-snug font-semibold text-white">“Você explicou sua marca. A MIDFLOW fez o trabalho. Agora revise, escolha e use o conteúdo.”</p>
-        <p className="mt-3 text-sm text-slate-400">Posts, Stories, legendas e hashtags em minutos.</p>
+        <p className="mt-3 text-sm text-slate-500">Posts, Stories, legendas e hashtags em minutos.</p>
       </div>
     </div>
   )
@@ -99,7 +99,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
             </svg>
             Continuar com Google
           </Button>
-          <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
+          <div className="my-6 flex items-center gap-3 text-xs text-slate-500">
             <span className="h-px flex-1 bg-line" /> ou com e-mail <span className="h-px flex-1 bg-line" />
           </div>
 
@@ -172,7 +172,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
           <button onClick={demo} className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100">
             <Sparkles className="size-4" /> Explorar a conta de demonstração
           </button>
-          <p className="mt-6 text-center text-xs text-slate-400">Protótipo: nenhum dado sai do seu navegador.</p>
+          <p className="mt-6 text-center text-xs text-slate-500">Protótipo: nenhum dado sai do seu navegador.</p>
         </div>
       </div>
       <Visual />

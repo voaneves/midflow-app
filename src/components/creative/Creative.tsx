@@ -39,9 +39,14 @@ interface Props {
   chrome?: boolean
   className?: string
   rounded?: number
+  /** Accessible name (pt-BR). Defaults to "Post 2: <headline>". Pass "" for decorative copies. */
+  label?: string
 }
 
-export function Creative({ c, style, palette, format, brand, width, chrome = true, className, rounded = 0 }: Props) {
+/** Screen-reader description of a creative, e.g. "Story 3: Agende seu horário". */
+export const creativeLabel = (c: CreativeT) => `${c.kind === 'story' ? 'Story' : 'Post'} ${c.order}: ${c.headline}`
+
+export function Creative({ c, style, palette, format, brand, width, chrome = true, className, rounded = 0, label }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(width ?? 0)
   useEffect(() => {
@@ -62,6 +67,10 @@ export function Creative({ c, style, palette, format, brand, width, chrome = tru
   return (
     <div
       ref={ref}
+      data-creative=""
+      role={label === '' ? 'presentation' : 'img'}
+      aria-label={label === '' ? undefined : (label ?? creativeLabel(c))}
+      aria-hidden={label === '' ? true : undefined}
       className={className}
       style={{ width: width ?? '100%', aspectRatio: `${BASE_W} / ${H}`, position: 'relative', overflow: 'hidden', borderRadius: rounded, maxWidth: '100%' }}
     >

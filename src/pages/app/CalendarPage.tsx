@@ -1,31 +1,31 @@
-import { useState, useMemo } from 'react'
-import {
-  CalendarDays,
-  CalendarHeart,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Copy,
-  Download,
-  Filter,
-  FolderOpen,
-  Plus,
-  Send,
-  Trash2,
-  CheckCircle2,
-} from 'lucide-react'
+import { CalendarHeart, CheckCircle2, ChevronLeft, ChevronRight, Clock, Copy, Download, FolderOpen, MoveRight, Plus, Send, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../components/creative/Creative'
 import { exportCreatives, jobFor, useLook } from '../../components/creative/parts'
 import { SocialPublishModal } from '../../components/creative/SocialPublishModal'
-import { Badge, Button, Card, cx, Modal, toast } from '../../components/ui'
+import { Badge, Button, Card, ChoiceGroup, cx, Dialog, Field, IconButton, Input, toast, useIsPhone } from '../../components/ui'
 import { copyText } from '../../lib/export'
 import { getSocialTips } from '../../lib/social'
 import { useApp } from '../../lib/store'
 import type { ScheduledPost, ScheduledStatus } from '../../lib/types'
 
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate()
+const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+const pad = (n: number) => String(n).padStart(2, '0')
+const iso = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+function specialDates(month: number) {
+  const list: { day: number; label: string }[] = []
+  if (month === 2) list.push({ day: 8, label: 'Dia da Mulher' })
+  if (month === 4) list.push({ day: 11, label: 'Dia das Mães' })
+  if (month === 5) list.push({ day: 12, label: 'Dia dos Namorados' })
+  if (month === 7) list.push({ day: 10, label: 'Dia dos Pais' })
+  if (month === 8) list.push({ day: 15, label: 'Dia do Cliente' })
+  if (month === 9) list.push({ day: 5, label: 'Dia do Empreendedor' }, { day: 12, label: 'Dia das Crianças' })
+  if (month === 10) list.push({ day: 27, label: 'Black Friday' })
+  if (month === 11) list.push({ day: 25, label: 'Natal' })
+  return list
 }
 
 export function CalendarPage() {
@@ -36,538 +36,438 @@ export function CalendarPage() {
   const scheduleCreative = useApp((s) => s.scheduleCreative)
   const markPostPublished = useApp((s) => s.markPostPublished)
   const removeScheduledPost = useApp((s) => s.removeScheduledPost)
+  const updateScheduledPost = useApp((s) => s.updateScheduledPost)
   const baseLook = useLook()
+  const phone = useIsPhone()
 
-  const today = useMemo(() => new Date(), [])
-  const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [today] = useState(() => new Date())
+  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
+  const [view, setView] = useState<'agenda' | 'mes'>(phone ? 'agenda' : 'mes')
   const [filterFormat, setFilterFormat] = useState<'all' | 'post' | 'story'>('all')
   const [filterStatus, setFilterStatus] = useState<ScheduledStatus | 'all'>('all')
-
-  const [activePost, setActivePost] = useState<ScheduledPost | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [publishingPost, setPublishingPost] = useState<ScheduledPost | null>(null)
   const [addDay, setAddDay] = useState<number | null>(null)
-  const [selectedLibId, setSelectedLibId] = useState<string>('')
+  const [selectedLibId, setSelectedLibId] = useState('')
   const [scheduleTime, setScheduleTime] = useState('11:30')
+  const [moveTo, setMoveTo] = useState('')
+  const [dragging, setDragging] = useState<string | null>(null)
 
-  const year = currentDate.getFullYear()
-  const month = currentDate.getMonth()
-  const daysInMonth = getDaysInMonth(year, month)
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
   const firstDayIndex = new Date(year, month, 1).getDay()
-
   const tips = getSocialTips(brand.segment)
-
-  const monthLabel = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-
-  // Datas comemorativas do mês
-  const specialDatesInMonth = useMemo(() => {
-    const list: { day: number; label: string }[] = []
-    if (month === 2) list.push({ day: 8, label: 'Dia da Mulher' })
-    if (month === 4) list.push({ day: 11, label: 'Dia das Mães' })
-    if (month === 5) list.push({ day: 12, label: 'Dia dos Namorados' })
-    if (month === 7) list.push({ day: 10, label: 'Dia dos Pais' })
-    if (month === 8) list.push({ day: 15, label: 'Dia do Cliente' })
-    if (month === 9) {
-      list.push({ day: 5, label: 'Dia do Empreendedor' })
-      list.push({ day: 12, label: 'Dia das Crianças' })
-    }
-    if (month === 10) list.push({ day: 27, label: 'Black Friday' })
-    if (month === 11) list.push({ day: 25, label: 'Natal' })
-    return list
-  }, [month])
+  const monthLabel = cap(cursor.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }))
+  const specials = useMemo(() => specialDates(month), [month])
+  const activePost = scheduledPosts.find((p) => p.id === activeId) ?? null
 
   const postsByDay = useMemo(() => {
     const map: Record<number, ScheduledPost[]> = {}
     scheduledPosts.forEach((p) => {
       const [y, m, d] = p.date.split('-').map(Number)
-      if (y === year && m === month + 1) {
-        if (!map[d]) map[d] = []
-        if (filterFormat !== 'all' && p.creative.kind !== filterFormat) return
-        if (filterStatus !== 'all' && p.status !== filterStatus) return
-        map[d].push(p)
-      }
+      if (y !== year || m !== month + 1) return
+      if (filterFormat !== 'all' && p.creative.kind !== filterFormat) return
+      if (filterStatus !== 'all' && p.status !== filterStatus) return
+      ;(map[d] ??= []).push(p)
     })
+    Object.values(map).forEach((l) => l.sort((a, b) => a.time.localeCompare(b.time)))
     return map
   }, [scheduledPosts, year, month, filterFormat, filterStatus])
 
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1))
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1))
-  const goToday = () => setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1))
+  const isToday = (d: number) => d === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+  const dayName = (d: number) => cap(new Date(year, month, d).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }))
 
-  const handleScheduleFromLibrary = () => {
+  const scheduleFromLibrary = () => {
     if (!addDay) return
     const item = library.find((l) => l.id === selectedLibId) || library[0]
-    if (!item) {
-      toast('Salve conteúdos na Biblioteca para agendar no calendário', 'info')
-      setAddDay(null)
-      return
-    }
-    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(addDay).padStart(2, '0')}`
-    scheduleCreative({
-      creative: item.creative,
-      date: dStr,
-      time: scheduleTime,
-      status: 'agendado',
-      themeLabel: item.themeLabel,
-      style: item.style,
-      palette: item.palette,
-      format: item.postFormat,
-    })
-    toast(`Post agendado para o dia ${addDay} com sucesso!`)
+    if (!item) return
+    scheduleCreative({ creative: item.creative, date: iso(year, month, addDay), time: scheduleTime, status: 'agendado', themeLabel: item.themeLabel, style: item.style, palette: item.palette, format: item.postFormat })
+    toast(`Agendado para ${dayName(addDay)}, às ${scheduleTime}`)
     setAddDay(null)
   }
+  const move = (id: string, date: string) => {
+    updateScheduledPost(id, { date })
+    const [y, m, d] = date.split('-').map(Number)
+    toast(`Movido para ${new Date(y, m - 1, d).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}`)
+  }
+
+  // Plain render function (not a nested component) so re-renders during drag keep the same DOM node.
+  const postChip = (sp: ScheduledPost, compact?: boolean) => (
+    <button
+      type="button"
+      draggable={!phone}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', sp.id)
+        setDragging(sp.id)
+      }}
+      onDragEnd={() => setDragging(null)}
+      onClick={() => {
+        setActiveId(sp.id)
+        setMoveTo(sp.date)
+      }}
+      className={cx(
+        'flex w-full items-center gap-2 rounded-lg border text-left shadow-sm transition hover:border-brand-400',
+        compact ? 'min-h-9 p-1' : 'min-h-14 p-2',
+        sp.status === 'publicado' ? 'border-emerald-300 bg-emerald-50' : 'border-brand-200 bg-white',
+        dragging === sp.id && 'opacity-50',
+      )}
+    >
+      <span className={cx('shrink-0 overflow-hidden rounded', compact ? 'size-7' : 'size-10')} aria-hidden>
+        <Creative c={sp.creative} style={sp.style} palette={sp.palette} format={sp.postFormat} brand={{ name: brand.name, handle: brand.handle }} chrome={false} label="" />
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-xs font-bold">{sp.creative.headline}</span>
+        <span className="block text-xs text-fg-subtle">
+          {sp.time} · {sp.creative.kind === 'story' ? 'Story' : 'Feed'}
+          {sp.status === 'publicado' && ' · publicado'}
+        </span>
+      </span>
+    </button>
+  )
+
+  const agendaDays = Array.from({ length: daysInMonth }, (_, i) => i + 1).filter((d) => postsByDay[d]?.length || specials.some((s) => s.day === d) || isToday(d))
 
   return (
-    <div className="mx-auto grid max-w-[1440px] gap-6">
-      {/* Topo do Calendário */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="grid size-11 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
-            <CalendarDays className="size-6" />
-          </span>
-          <div>
-            <h2 className="text-xl font-bold text-ink sm:text-2xl capitalize">{monthLabel}</h2>
-            <p className="text-xs text-slate-500">
-              Calendário editorial de postagens para <b>{brand.name}</b>
-            </p>
-          </div>
-        </div>
-
-        {/* Controles de Navegação */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-xl border border-line bg-white shadow-sm">
-            <button
-              type="button"
-              onClick={prevMonth}
-              className="grid size-9 place-items-center rounded-l-xl text-slate-600 hover:bg-slate-50"
-              aria-label="Mês anterior"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={goToday}
-              className="px-3 text-xs font-semibold text-slate-700 hover:text-brand-800"
-            >
-              Hoje
-            </button>
-            <button
-              type="button"
-              onClick={nextMonth}
-              className="grid size-9 place-items-center rounded-r-xl text-slate-600 hover:bg-slate-50"
-              aria-label="Próximo mês"
-            >
-              <ChevronRight className="size-4" />
-            </button>
-          </div>
-
-          <Button onClick={() => nav('/app/criar/1')}>
-            <Plus className="size-4" /> Criar novo conteúdo
+    <div className="mx-auto grid max-w-[1440px] gap-4 lg:gap-6">
+      {/* header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1">
+          <IconButton variant="secondary" label="Mês anterior" onClick={() => setCursor(new Date(year, month - 1, 1))}>
+            <ChevronLeft className="size-5" aria-hidden />
+          </IconButton>
+          <h2 className="min-w-40 px-2 text-center text-title-sm font-bold" aria-live="polite">
+            {monthLabel}
+          </h2>
+          <IconButton variant="secondary" label="Próximo mês" onClick={() => setCursor(new Date(year, month + 1, 1))}>
+            <ChevronRight className="size-5" aria-hidden />
+          </IconButton>
+          <Button variant="ghost" size="sm" onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}>
+            Hoje
           </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <ChoiceGroup
+            legend="Visualização"
+            legendHidden
+            variant="segmented"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'agenda', label: 'Agenda' },
+              { value: 'mes', label: 'Mês' },
+            ]}
+          />
+          <div className="hidden md:block">
+            <Button onClick={() => nav('/app/criar/1')}>
+              <Plus className="size-4" aria-hidden /> Criar conteúdo
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Barra de Filtros & Recomendações */}
-      <Card className="flex flex-wrap items-center justify-between gap-4 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
-            <Filter className="size-3.5" /> Filtros:
-          </span>
-          <div className="flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
-            {(['all', 'post', 'story'] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilterFormat(f)}
-                className={cx(
-                  'rounded-md px-2.5 py-1 transition',
-                  filterFormat === f ? 'bg-white font-bold text-ink shadow-sm' : 'text-slate-600',
-                )}
-              >
-                {f === 'all' ? 'Todos' : f === 'post' ? 'Feed' : 'Stories'}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
-            {(['all', 'agendado', 'publicado'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setFilterStatus(s)}
-                className={cx(
-                  'rounded-md px-2.5 py-1 transition',
-                  filterStatus === s ? 'bg-white font-bold text-ink shadow-sm' : 'text-slate-600',
-                )}
-              >
-                {s === 'all' ? 'Todos os Status' : s === 'agendado' ? 'Agendados' : 'Publicados'}
-              </button>
-            ))}
-          </div>
+      {/* filters */}
+      <Card className="flex flex-col gap-3 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          <ChoiceGroup
+            legend="Formato"
+            legendHidden
+            variant="segmented"
+            value={filterFormat}
+            onChange={setFilterFormat}
+            options={[
+              { value: 'all', label: 'Todos' },
+              { value: 'post', label: 'Feed' },
+              { value: 'story', label: 'Stories' },
+            ]}
+          />
+          <ChoiceGroup
+            legend="Status"
+            legendHidden
+            variant="segmented"
+            value={filterStatus}
+            onChange={setFilterStatus}
+            options={[
+              { value: 'all', label: 'Todos' },
+              { value: 'agendado', label: 'Agendados' },
+              { value: 'publicado', label: 'Publicados' },
+            ]}
+          />
         </div>
-
-        {/* Dica de horários */}
-        <div className="flex items-center gap-2 text-xs text-slate-600">
-          <Clock className="size-3.5 text-brand-600" />
-          <span>Melhores horários do seu segmento:</span>
-          <b>{tips.bestHours.join(' · ')}</b>
-        </div>
+        <p className="flex items-center gap-2 text-sm text-slate-700">
+          <Clock className="size-4 text-brand-700" aria-hidden /> Melhores horários: <b>{tips.bestHours.join(' · ')}</b>
+        </p>
       </Card>
 
-      {/* Grade do Calendário */}
-      <Card className="overflow-hidden shadow-card">
-        {/* Cabeçalho dos Dias da Semana */}
-        <div className="grid grid-cols-7 border-b border-line bg-slate-50 text-center text-xs font-bold text-slate-600">
-          {['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((d, i) => (
-            <div key={d} className="py-2.5">
-              <span className="hidden sm:inline">{d}</span>
-              <span className="sm:hidden">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][i]}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Células de Dias */}
-        <div className="grid grid-cols-7">
-          {Array.from({ length: firstDayIndex }).map((_, i) => (
-            <div key={`empty-${i}`} className="min-h-24 border-r border-b border-line bg-slate-50/40 sm:min-h-32" />
-          ))}
-
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const day = i + 1
-            const isToday =
-              day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-            const dayPosts = postsByDay[day] || []
-            const specialDate = specialDatesInMonth.find((sd) => sd.day === day)
-
-            return (
-              <div
-                key={day}
-                className={cx(
-                  'group relative min-h-24 border-r border-b border-line p-1.5 transition sm:min-h-32 sm:p-2',
-                  isToday && 'bg-brand-50/40 ring-1 ring-inset ring-brand-300',
-                )}
-              >
-                {/* Linha Superior do Dia */}
-                <div className="flex items-center justify-between">
-                  <span
-                    className={cx(
-                      'grid size-6 place-items-center rounded-full text-xs font-bold',
-                      isToday ? 'bg-brand-700 text-white' : 'text-slate-700',
-                    )}
-                  >
-                    {day}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setAddDay(day)}
-                    className="grid size-5 place-items-center rounded text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-slate-200 hover:text-ink"
-                    title={`Agendar post para o dia ${day}`}
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
-                </div>
-
-                {/* Data Especial */}
-                {specialDate && (
-                  <div className="mt-1 flex items-center gap-1 truncate rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-200">
-                    <CalendarHeart className="size-2.5 shrink-0" />
-                    <span className="truncate">{specialDate.label}</span>
-                  </div>
-                )}
-
-                {/* Cards de Posts Agendados no Dia */}
-                <div className="mt-1.5 space-y-1.5">
-                  {dayPosts.map((sp) => (
-                    <button
-                      key={sp.id}
-                      type="button"
-                      onClick={() => setActivePost(sp)}
-                      className={cx(
-                        'flex w-full items-center gap-1.5 rounded-lg border p-1 text-left shadow-sm transition hover:scale-[1.02]',
-                        sp.status === 'publicado'
-                          ? 'border-emerald-200 bg-emerald-50/70 text-emerald-950'
-                          : 'border-brand-200 bg-white text-ink',
+      {view === 'agenda' ? (
+        <section aria-label={`Agenda de ${monthLabel}`}>
+          {agendaDays.length === 0 && <p className="text-sm text-fg-subtle">Nada agendado neste mês.</p>}
+          <ol className="grid gap-3">
+            {agendaDays.map((d) => {
+              const posts = postsByDay[d] ?? []
+              const sd = specials.find((s) => s.day === d)
+              return (
+                <li key={d}>
+                  <Card className={cx('flex gap-3 p-3 sm:p-4', isToday(d) && 'ring-2 ring-brand-500')}>
+                    <div className={cx('grid w-14 shrink-0 place-items-center content-center rounded-xl py-2 text-center', isToday(d) ? 'bg-brand-700 text-white' : 'bg-slate-100')} aria-hidden>
+                      <span className="text-xs font-semibold uppercase">{WEEKDAYS[new Date(year, month, d).getDay()].slice(0, 3)}</span>
+                      <span className="text-title font-extrabold">{d}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-bold">
+                        {dayName(d)}
+                        {isToday(d) && ' · hoje'}
+                      </h3>
+                      {sd && (
+                        <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-300 bg-warning-soft px-2 py-0.5 text-xs font-bold text-amber-950">
+                          <CalendarHeart className="size-3.5" aria-hidden /> {sd.label}
+                        </p>
                       )}
-                    >
-                      <div className="size-6 shrink-0 overflow-hidden rounded bg-slate-100">
-                        <Creative
-                          c={sp.creative}
-                          style={sp.style}
-                          palette={sp.palette}
-                          format={sp.postFormat}
-                          brand={{ name: brand.name, handle: brand.handle }}
-                          chrome={false}
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <div className="truncate text-[11px] font-bold">{sp.creative.headline}</div>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                          <span>{sp.time}</span>
-                          <span>·</span>
-                          <span className="capitalize">{sp.creative.kind === 'story' ? 'Story' : 'Feed'}</span>
+                      {posts.length > 0 && (
+                        <ul className="mt-2 grid gap-2">
+                          {posts.map((sp) => (
+                            <li key={sp.id}>
+                              {postChip(sp)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <Button variant="ghost" size="sm" className="mt-1 -ml-2" onClick={() => setAddDay(d)}>
+                        <Plus className="size-4" aria-hidden /> Agendar neste dia
+                      </Button>
+                    </div>
+                  </Card>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ) : (
+        <Card className="overflow-x-auto">
+          <table className="w-full min-w-[640px] table-fixed border-collapse" aria-label={`Calendário de ${monthLabel}`}>
+            <thead>
+              <tr className="border-b border-line bg-slate-50 text-xs font-bold text-slate-700">
+                {WEEKDAYS.map((d) => (
+                  <th key={d} scope="col" className="py-2.5">
+                    <abbr title={d} className="no-underline xl:hidden">
+                      {d.slice(0, 3)}
+                    </abbr>
+                    <span className="hidden xl:inline">{d}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: Math.ceil((firstDayIndex + daysInMonth) / 7) }).map((_, w) => (
+                <tr key={w}>
+                  {Array.from({ length: 7 }).map((__, k) => {
+                    const d = w * 7 + k - firstDayIndex + 1
+                    if (d < 1 || d > daysInMonth) return <td key={k} className="h-32 border-r border-b border-line bg-slate-50/50" />
+                    const posts = postsByDay[d] ?? []
+                    const sd = specials.find((s) => s.day === d)
+                    return (
+                      <td
+                        key={k}
+                        className={cx('h-32 border-r border-b border-line p-1.5 align-top', isToday(d) && 'bg-brand-50/50', dragging && 'hover:bg-brand-50')}
+                        onDragOver={(e) => dragging && e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const id = e.dataTransfer.getData('text/plain')
+                          if (id) move(id, iso(year, month, d))
+                          setDragging(null)
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className={cx('grid size-7 place-items-center rounded-full text-xs font-bold', isToday(d) ? 'bg-brand-700 text-white' : 'text-slate-800')}>
+                            {d}
+                            {isToday(d) && <span className="sr-only"> (hoje)</span>}
+                          </span>
+                          <IconButton size="sm" label={`Agendar em ${dayName(d)}`} onClick={() => setAddDay(d)} className="size-9 text-slate-600">
+                            <Plus className="size-4" aria-hidden />
+                          </IconButton>
                         </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </Card>
-
-      {/* Datas Comemorativas do Mês */}
-      {specialDatesInMonth.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center gap-2 font-bold text-ink">
-            <CalendarHeart className="size-5 text-amber-500" />
-            <span>Oportunidades e Datas Especiais deste Mês</span>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-            {specialDatesInMonth.map((sd) => (
-              <div
-                key={sd.day}
-                className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3"
-              >
-                <div>
-                  <div className="text-sm font-bold text-ink">{sd.label}</div>
-                  <div className="text-xs text-slate-500">Dia {sd.day} deste mês</div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    nav('/app/criar/1')
-                    toast(`Criando conteúdo focado em: ${sd.label}`)
-                  }}
-                >
-                  Criar post
-                </Button>
-              </div>
-            ))}
-          </div>
+                        {sd && (
+                          <p className="mt-0.5 flex items-center gap-1 truncate rounded border border-amber-300 bg-warning-soft px-1.5 py-0.5 text-xs font-bold text-amber-950">
+                            <CalendarHeart className="size-3 shrink-0" aria-hidden />
+                            <span className="truncate">{sd.label}</span>
+                          </p>
+                        )}
+                        <ul className="mt-1 space-y-1">
+                          {posts.map((sp) => (
+                            <li key={sp.id}>
+                              {postChip(sp, true)}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-4 py-2 text-xs text-fg-subtle">Dica: arraste um post para outro dia, ou abra o post e use “Mover para…”.</p>
         </Card>
       )}
 
-      {/* Modal: Detalhes do Post Agendado */}
-      {activePost && (
-        <Modal
-          open={!!activePost}
-          onClose={() => setActivePost(null)}
-          wide
-          title={
-            <div className="flex items-center gap-2">
-              <span className="capitalize">
-                {activePost.creative.kind === 'story' ? 'Story' : 'Post de Feed'} Agendado
-              </span>
-              <Badge className={activePost.status === 'publicado' ? 'bg-emerald-100 text-emerald-800' : 'bg-brand-50'}>
-                {activePost.status === 'publicado' ? 'Publicado' : 'Agendado'}
-              </Badge>
-            </div>
-          }
-        >
-          <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,340px)_1fr]">
-            <div className="mx-auto w-full max-w-[340px] overflow-hidden rounded-2xl shadow-card">
-              <Creative
-                c={activePost.creative}
-                style={activePost.style}
-                palette={activePost.palette}
-                format={activePost.postFormat}
-                brand={baseLook.brand}
-                chrome={false}
-              />
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 border-b border-line pb-3">
-                <span>
-                  <b>Data:</b> {activePost.date} às {activePost.time}
-                </span>
-                <span>
-                  <b>Rede:</b> Instagram
-                </span>
-                <span>
-                  <b>Tema:</b> {activePost.themeLabel}
-                </span>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-ink">Legenda</h4>
-                <p className="mt-1.5 max-h-44 overflow-y-auto rounded-xl bg-slate-50 p-3 text-xs leading-relaxed whitespace-pre-line text-slate-700 scroll-thin">
-                  {activePost.creative.caption}
-                </p>
-                <p className="mt-2 text-xs font-semibold text-brand-700">{activePost.creative.hashtags.join(' ')}</p>
-              </div>
-
-              {activePost.notes && (
-                <div className="rounded-xl border border-line bg-slate-50 p-3 text-xs text-slate-600">
-                  <b>Nota do agendamento:</b> {activePost.notes}
+      {specials.length > 0 && (
+        <Card as="section" aria-labelledby="cal-special" className="p-4 sm:p-5">
+          <h2 id="cal-special" className="flex items-center gap-2 font-bold">
+            <CalendarHeart className="size-5 text-amber-600" aria-hidden /> Datas especiais deste mês
+          </h2>
+          <ul className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {specials.map((sd) => (
+              <li key={sd.day} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-slate-50 p-3">
+                <div>
+                  <div className="text-sm font-bold">{sd.label}</div>
+                  <div className="text-xs text-fg-subtle">Dia {sd.day}</div>
                 </div>
-              )}
+                <Button size="sm" variant="secondary" onClick={() => nav('/app/criar/1')}>
+                  Criar post<span className="sr-only"> para {sd.label}</span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
-              <div className="flex flex-wrap gap-2 pt-3">
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    setPublishingPost(activePost)
-                    setActivePost(null)
-                  }}
-                >
-                  <Send className="size-4" /> Auxiliar postagem
+      {/* post detail */}
+      <Dialog
+        open={!!activePost}
+        onClose={() => setActiveId(null)}
+        size="xl"
+        title={activePost ? `${activePost.creative.kind === 'story' ? 'Story' : 'Post de feed'} agendado` : ''}
+        headerAside={activePost && <Badge className={activePost.status === 'publicado' ? 'bg-emerald-100 text-emerald-900' : ''}>{activePost.status === 'publicado' ? 'Publicado' : 'Agendado'}</Badge>}
+      >
+        {activePost && (
+          <div className="grid gap-6 p-5 md:grid-cols-[minmax(0,340px)_1fr] md:p-6">
+            <div className="mx-auto w-full max-w-[340px] overflow-hidden rounded-2xl shadow-card">
+              <Creative c={activePost.creative} style={activePost.style} palette={activePost.palette} format={activePost.postFormat} brand={baseLook.brand} chrome={false} />
+            </div>
+            <div className="grid content-start gap-4">
+              <dl className="flex flex-wrap gap-x-4 gap-y-1 border-b border-line pb-3 text-sm">
+                <div>
+                  <dt className="inline font-semibold">Quando: </dt>
+                  <dd className="inline">
+                    {activePost.date.split('-').reverse().join('/')} às {activePost.time}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="inline font-semibold">Tema: </dt>
+                  <dd className="inline">{activePost.themeLabel}</dd>
+                </div>
+              </dl>
+              <div>
+                <h3 className="text-sm font-bold">Legenda</h3>
+                <p className="mt-1.5 max-h-44 overflow-y-auto rounded-xl bg-slate-50 p-3 text-sm leading-relaxed whitespace-pre-line text-slate-800 scroll-thin">{activePost.creative.caption}</p>
+                <p className="mt-2 text-sm font-semibold text-brand-800">{activePost.creative.hashtags.join(' ')}</p>
+              </div>
+              {activePost.notes && <p className="rounded-xl border border-line bg-slate-50 p-3 text-sm text-slate-700"><b>Nota:</b> {activePost.notes}</p>}
+              <div className="flex items-end gap-2">
+                <Field label="Mover para…" className="flex-1">
+                  <Input type="date" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} />
+                </Field>
+                <Button variant="secondary" disabled={!moveTo || moveTo === activePost.date} onClick={() => move(activePost.id, moveTo)}>
+                  <MoveRight className="size-4" aria-hidden /> Mover
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <Button className="col-span-2" onClick={() => (setPublishingPost(activePost), setActiveId(null))}>
+                  <Send className="size-4" aria-hidden /> Auxiliar postagem
+                </Button>
+                <Button variant="secondary" onClick={async () => (await copyText(`${activePost.creative.caption}\n\n${activePost.creative.hashtags.join(' ')}`)) && toast('Legenda copiada')}>
+                  <Copy className="size-4" aria-hidden /> Copiar legenda
                 </Button>
                 <Button
                   variant="secondary"
-                  onClick={async () => {
-                    await copyText(
-                      `${activePost.creative.caption}\n\n${activePost.creative.hashtags.join(' ')}`,
-                    )
-                    toast('Legenda copiada!')
-                  }}
+                  onClick={() => exportCreatives([jobFor(activePost.creative, { palette: activePost.palette, style: activePost.style, format: activePost.postFormat, brand: baseLook.brand }, 0, `${activePost.themeLabel}-${activePost.creative.kind}`)])}
                 >
-                  <Copy className="size-4" /> Copiar legenda
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    exportCreatives([
-                      jobFor(
-                        activePost.creative,
-                        {
-                          palette: activePost.palette,
-                          style: activePost.style,
-                          format: activePost.postFormat,
-                          brand: baseLook.brand,
-                        },
-                        0,
-                        `${activePost.themeLabel}-${activePost.creative.kind}`,
-                      ),
-                    ])
-                  }
-                >
-                  <Download className="size-4" /> Baixar PNG
+                  <Download className="size-4" aria-hidden /> Baixar PNG
                 </Button>
                 {activePost.status !== 'publicado' && (
-                  <Button
-                    variant="soft"
-                    onClick={() => {
-                      markPostPublished(activePost.id)
-                      toast('Marcado como publicado!')
-                      setActivePost(null)
-                    }}
-                  >
-                    <CheckCircle2 className="size-4" /> Marcar como publicado
+                  <Button variant="soft" onClick={() => (markPostPublished(activePost.id), toast('Marcado como publicado'))}>
+                    <CheckCircle2 className="size-4" aria-hidden /> Marcar como publicado
                   </Button>
                 )}
                 <Button
                   variant="danger"
                   onClick={() => {
+                    const before = useApp.getState().scheduledPosts
                     removeScheduledPost(activePost.id)
-                    toast('Removido do calendário')
-                    setActivePost(null)
+                    setActiveId(null)
+                    toast('Removido do calendário', 'ok', { action: { label: 'Desfazer', onClick: () => useApp.setState({ scheduledPosts: before }) } })
                   }}
                 >
-                  <Trash2 className="size-4" /> Excluir
+                  <Trash2 className="size-4" aria-hidden /> Excluir
                 </Button>
               </div>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </Dialog>
 
-      {/* Modal: Agendar para o Dia Clicado */}
-      {addDay && (
-        <Modal
-          open={!!addDay}
-          onClose={() => setAddDay(null)}
-          title={`Agendar Conteúdo para o Dia ${addDay} de ${monthLabel}`}
-        >
-          <div className="p-6">
-            <p className="text-sm text-slate-600">
-              Escolha um criativo da sua <b>Biblioteca</b> para agendar nesta data:
-            </p>
-
-            {library.length ? (
-              <div className="mt-4 grid max-h-60 grid-cols-3 gap-3 overflow-y-auto p-1 scroll-thin">
-                {library.map((l) => {
-                  const on = (selectedLibId || library[0].id) === l.id
-                  return (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => setSelectedLibId(l.id)}
-                      className={cx(
-                        'overflow-hidden rounded-xl border p-1 text-left transition',
-                        on ? 'border-brand-500 ring-2 ring-brand-200' : 'border-line hover:border-slate-300',
-                      )}
-                    >
-                      <div className="aspect-[4/5] overflow-hidden rounded-lg">
-                        <Creative
-                          c={l.creative}
-                          style={l.style}
-                          palette={l.palette}
-                          format={l.postFormat}
-                          brand={baseLook.brand}
-                          chrome={false}
-                        />
-                      </div>
-                      <div className="truncate pt-1 text-[11px] font-semibold">{l.themeLabel}</div>
-                    </button>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="my-6 text-center text-sm text-slate-500">
-                <FolderOpen className="mx-auto size-8 text-slate-400" />
-                <p className="mt-2">Sua biblioteca está vazia.</p>
-                <Button size="sm" className="mt-3" onClick={() => nav('/app/criar/1')}>
-                  Criar conteúdo agora
-                </Button>
-              </div>
-            )}
-
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-ink">Horário</label>
-                <input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-xl border border-line px-3 text-sm"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <span className="text-[11px] text-slate-500">Sugerido para {brand.segment}:</span>
-                <span className="text-xs font-bold text-brand-700">{tips.bestHours[0] || '11:30'}</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2 border-t border-line pt-4">
+      {/* schedule on a day */}
+      <Dialog
+        open={addDay !== null}
+        onClose={() => setAddDay(null)}
+        title="Agendar conteúdo"
+        description={addDay ? dayName(addDay) : undefined}
+        footer={
+          library.length ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button variant="secondary" onClick={() => setAddDay(null)}>
                 Cancelar
               </Button>
-              <Button onClick={handleScheduleFromLibrary} disabled={!library.length}>
-                Agendar post
+              <Button onClick={scheduleFromLibrary}>Agendar</Button>
+            </div>
+          ) : undefined
+        }
+      >
+        <div className="grid gap-4 px-5 py-4 md:px-6">
+          {library.length ? (
+            <>
+              <ChoiceGroup
+                legend="Escolha um criativo da Biblioteca"
+                variant="media"
+                className="grid max-h-[40dvh] grid-cols-3 gap-2 overflow-y-auto p-1 scroll-thin"
+                value={selectedLibId || library[0].id}
+                onChange={setSelectedLibId}
+                options={library.map((l) => ({
+                  value: l.id,
+                  label: <span className="line-clamp-1 text-xs">{l.themeLabel}</span>,
+                  media: <Creative c={l.creative} style={l.style} palette={l.palette} format={l.postFormat} brand={baseLook.brand} chrome={false} label="" />,
+                }))}
+              />
+              <div className="grid grid-cols-2 items-end gap-3">
+                <Field label="Horário">
+                  <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} />
+                </Field>
+                <Button variant="soft" onClick={() => setScheduleTime(tips.bestHours[0] || '11:30')}>
+                  Usar {tips.bestHours[0] || '11:30'} (sugerido)
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="py-6 text-center text-sm text-fg-subtle">
+              <FolderOpen className="mx-auto size-8 text-slate-500" aria-hidden />
+              <p className="mt-2">Sua biblioteca está vazia. Salve criativos para agendá-los.</p>
+              <Button size="sm" className="mt-3" onClick={() => nav('/app/criar/1')}>
+                Criar conteúdo agora
               </Button>
             </div>
-          </div>
-        </Modal>
-      )}
+          )}
+        </div>
+      </Dialog>
 
-      {/* Assistente de Publicação */}
       {publishingPost && (
         <SocialPublishModal
-          open={!!publishingPost}
+          open
           onClose={() => setPublishingPost(null)}
           creative={publishingPost.creative}
-          look={{
-            palette: publishingPost.palette,
-            style: publishingPost.style,
-            format: publishingPost.postFormat,
-            brand: baseLook.brand,
-          }}
+          look={{ palette: publishingPost.palette, style: publishingPost.style, format: publishingPost.postFormat, brand: baseLook.brand }}
           themeLabel={publishingPost.themeLabel}
         />
       )}
     </div>
   )
 }
-

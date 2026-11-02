@@ -1,262 +1,183 @@
-import { useState } from 'react'
-import {
-  CalendarClock,
-  Check,
-  CheckCircle2,
-  Clock,
-  Copy,
-  Download,
-  ExternalLink,
-  MessageCircle,
-  Share2,
-  Sparkles,
-  Wand2,
-} from 'lucide-react'
-import { copyText, type ExportJob } from '../../lib/export'
-import { generateDirectLinks, getSocialTips, shareContentNative } from '../../lib/social'
+import { CalendarClock, Check, Clock, Copy, Download, ExternalLink, MessageCircle, Share2 } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { copyText, dataUrlToBlob, renderPng } from '../../lib/export'
+import { generateDirectLinks, getSocialTips } from '../../lib/social'
 import { useApp } from '../../lib/store'
-import type { Creative, Palette, PostFormat, StyleId } from '../../lib/types'
-import { Button, Card, cx, InstagramIcon, Modal, toast } from '../ui'
-import { type BrandMark } from './Creative'
-import { exportCreatives, jobFor } from './parts'
+import type { Creative } from '../../lib/types'
+import { Button, cx, Dialog, InstagramIcon, toast } from '../ui'
+import { exportCreatives, jobFor, type Look } from './parts'
 
 interface Props {
   open: boolean
   onClose: () => void
   creative: Creative | null
-  look: { palette: Palette; style: StyleId; format: PostFormat; brand: BrandMark }
+  look: Look
   themeLabel?: string
   onOpenSchedule?: () => void
   onSchedule?: () => void
 }
 
-export function SocialPublishModal({ open, onClose, creative, look, themeLabel, onOpenSchedule, onSchedule }: Props) {
-  const brand = useApp((s) => s.brand)
-  const scheduleAction = onSchedule || onOpenSchedule
-  const [copied, setCopied] = useState(false)
-  const [downloading, setDownloading] = useState(false)
-  const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({
-    arte: false,
-    legenda: false,
-    local: false,
-    stories: false,
-  })
-
-  if (!creative) return null
-
-  const tips = getSocialTips(brand.segment)
-  const links = generateDirectLinks({
-    caption: creative.caption,
-    hashtags: creative.hashtags,
-    brandName: brand.name,
-    city: brand.city,
-  })
-
-  const handleCopy = async () => {
-    const ok = await copyText(links.fullText)
-    if (ok) {
-      setCopied(true)
-      setCheckedSteps((s) => ({ ...s, legenda: true }))
-      toast('Legenda e hashtags copiadas com sucesso!')
-      setTimeout(() => setCopied(false), 2500)
-    }
-  }
-
-  const handleDownload = async () => {
-    setDownloading(true)
-    const job: ExportJob = jobFor(
-      creative,
-      look,
-      creative.order - 1,
-      `${themeLabel || 'criativo'}-${creative.kind}-${creative.order}`,
-    )
-    exportCreatives([job])
-    setCheckedSteps((s) => ({ ...s, arte: true }))
-    setDownloading(false)
-  }
-
-  const handleNativeShare = async () => {
-    const res = await shareContentNative({
-      title: `${brand.name} — ${creative.headline}`,
-      text: links.fullText,
-    })
-    if (res === 'shared') {
-      toast('Compartilhamento acionado!')
-    } else if (res === 'copied') {
-      toast('Texto copiado para a área de transferência')
-    }
-  }
-
-  const toggleCheck = (k: string) => {
-    setCheckedSteps((s) => ({ ...s, [k]: !s[k] }))
-  }
-
+function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: ReactNode }) {
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      wide
-      title={
-        <div className="flex items-center gap-2">
-          <Sparkles className="size-5 text-brand-600" />
-          <span>Assistente de Publicação Social Media</span>
-        </div>
-      }
-    >
-      <div className="grid gap-6 p-6 lg:grid-cols-[1.1fr_0.9fr]">
-        {/* Coluna Esquerda: Texto + Ações Diretas */}
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-line bg-slate-50 p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold tracking-wider text-slate-500 uppercase">
-                {creative.kind === 'story' ? `Story ${creative.order}` : `Post para Feed ${creative.order}`}
-              </span>
-              <span className="text-xs font-semibold text-brand-700">{brand.name}</span>
-            </div>
-            <h4 className="mt-1 font-bold text-ink">{creative.headline}</h4>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-ink">Legenda e hashtags prontas</span>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800"
-              >
-                {copied ? <Check className="size-3.5 text-brand-600" /> : <Copy className="size-3.5" />}
-                {copied ? 'Copiado!' : 'Copiar texto'}
-              </button>
-            </div>
-            <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-line bg-white p-4 text-sm leading-relaxed whitespace-pre-line text-slate-700 scroll-thin">
-              {creative.caption}
-              <div className="mt-3 font-semibold text-brand-700">{creative.hashtags.join(' ')}</div>
-            </div>
-          </div>
-
-          {/* Botões de Ação de Publicação */}
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Button variant="primary" onClick={handleCopy} className="w-full">
-              <Copy className="size-4" /> Copiar legenda completa
-            </Button>
-            <Button variant="secondary" onClick={handleDownload} loading={downloading} className="w-full">
-              <Download className="size-4" /> Baixar arte PNG (1080px)
-            </Button>
-            <a
-              href={links.instagramCreate}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink transition hover:border-slate-300 hover:bg-slate-50"
-            >
-              <InstagramIcon className="size-4" /> Publicar no Instagram Web <ExternalLink className="size-3.5 text-slate-400" />
-            </a>
-            <a
-              href={links.whatsAppShare}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100"
-            >
-              <MessageCircle className="size-4 text-emerald-600" /> Enviar no WhatsApp <ExternalLink className="size-3.5 text-emerald-400" />
-            </a>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-            <button
-              type="button"
-              onClick={handleNativeShare}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-ink"
-            >
-              <Share2 className="size-3.5" /> Compartilhar do dispositivo
-            </button>
-            {scheduleAction && (
-              <Button size="sm" variant="soft" onClick={scheduleAction}>
-                <CalendarClock className="size-4" /> Agendar no Calendário
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Coluna Direita: Melhores Horários + Checklist do Social Media */}
-        <div className="space-y-5">
-          {/* Horários Recomendados */}
-          <Card className="border-brand-200 bg-brand-50/50 p-4">
-            <div className="flex items-center gap-2 font-bold text-brand-900">
-              <Clock className="size-4 text-brand-700" />
-              <span>Melhores horários para {brand.segment}</span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {tips.bestHours.map((h) => (
-                <span
-                  key={h}
-                  className="rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-bold text-brand-800 shadow-sm"
-                >
-                  {h}
-                </span>
-              ))}
-            </div>
-            <p className="mt-2.5 text-xs text-brand-800">
-              <b>Melhores dias:</b> {tips.bestDays.join(', ')}.
-            </p>
-            <p className="mt-1 text-xs text-brand-700">
-              <b>Ritmo sugerido:</b> {tips.frequency}.
-            </p>
-          </Card>
-
-          {/* Checklist de Publicação */}
-          <Card className="p-4">
-            <h4 className="text-sm font-bold text-ink">Checklist de Publicação</h4>
-            <p className="mt-0.5 text-xs text-slate-500">Passo a passo para garantir o máximo de alcance e engajamento:</p>
-            <div className="mt-3 space-y-2">
-              {[
-                { k: 'arte', label: 'Arte baixada na resolução ideal (1080px)' },
-                { k: 'legenda', label: 'Legenda copiada com CTA e hashtags' },
-                { k: 'local', label: `Marcar a localização (${brand.city || 'sua cidade'}) no Instagram` },
-                { k: 'stories', label: 'Repostar o post nos Stories com sticker ou enquete' },
-              ].map(({ k, label }) => {
-                const on = checkedSteps[k]
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => toggleCheck(k)}
-                    className={cx(
-                      'flex w-full items-center gap-2.5 rounded-xl border p-2.5 text-left text-xs font-medium transition',
-                      on ? 'border-brand-300 bg-brand-50 text-brand-900' : 'border-line text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    <span
-                      className={cx(
-                        'grid size-4 shrink-0 place-items-center rounded border',
-                        on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white',
-                      )}
-                    >
-                      {on && <Check className="size-3" strokeWidth={3} />}
-                    </span>
-                    <span className="flex-1">{label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </Card>
-
-          {/* Ideias de Stories Complementares */}
-          <div className="rounded-2xl border border-line bg-white p-4">
-            <div className="flex items-center gap-2 font-bold text-ink">
-              <Wand2 className="size-4 text-brand-600" />
-              <span className="text-sm">Ganchos para Stories de hoje</span>
-            </div>
-            <ul className="mt-3 space-y-2 text-xs text-slate-600">
-              {tips.storyHooks.slice(0, 3).map((hook, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-brand-600" />
-                  <span>{hook}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+    <li className="relative flex gap-3 pb-6 last:pb-0">
+      <span aria-hidden className={cx('z-10 grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold', done ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-700 ring-1 ring-line')}>
+        {done ? <Check className="size-4" strokeWidth={3} /> : n}
+      </span>
+      <span aria-hidden className="absolute top-8 bottom-0 left-4 w-px bg-line last:hidden" />
+      <div className="min-w-0 flex-1 pt-1">
+        <h3 className="text-sm font-bold">
+          {title}
+          {done && <span className="sr-only"> (feito)</span>}
+        </h3>
+        <div className="mt-2">{children}</div>
       </div>
-    </Modal>
+    </li>
   )
 }
 
+/** Publishing assistant: 1. copy caption → 2. save the image → 3. open Instagram. Native share with files when supported. */
+export function SocialPublishModal({ open, onClose, creative, look, themeLabel, onOpenSchedule, onSchedule }: Props) {
+  const brand = useApp((s) => s.brand)
+  const scheduleAction = onSchedule || onOpenSchedule
+  const [done, setDone] = useState({ copy: false, image: false, insta: false })
+  const [file, setFile] = useState<File | null>(null)
+
+  useEffect(() => {
+    setDone({ copy: false, image: false, insta: false })
+    setFile(null)
+    if (!open || !creative) return
+    let alive = true
+    // pre-render the PNG so the share sheet can open synchronously on tap (iOS requires a user gesture)
+    renderPng(jobFor(creative, look, creative.order - 1, `${themeLabel || 'criativo'}-${creative.kind}-${creative.order}`))
+      .then((url) => alive && setFile(new File([dataUrlToBlob(url)], `midflow-${creative.kind}-${creative.order}.png`, { type: 'image/png' })))
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+    // look objects are recreated by callers on every render; the creative identity is what matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, creative, themeLabel])
+
+  if (!creative) return null
+  const tips = getSocialTips(brand.segment)
+  const links = generateDirectLinks({ caption: creative.caption, hashtags: creative.hashtags, brandName: brand.name, city: brand.city })
+  const canShareFile = !!file && typeof navigator !== 'undefined' && 'canShare' in navigator && navigator.canShare({ files: [file] })
+
+  const copy = async () => {
+    if (await copyText(links.fullText)) {
+      setDone((d) => ({ ...d, copy: true }))
+      toast('Legenda e hashtags copiadas')
+    }
+  }
+  const download = () => {
+    exportCreatives([jobFor(creative, look, creative.order - 1, `${themeLabel || 'criativo'}-${creative.kind}-${creative.order}`)])
+    setDone((d) => ({ ...d, image: true }))
+  }
+  const share = async () => {
+    if (!file) return
+    await copyText(links.fullText)
+    try {
+      await navigator.share({ files: [file], text: links.fullText, title: `${brand.name} — ${creative.headline}` })
+      setDone({ copy: true, image: true, insta: true })
+    } catch (e) {
+      if ((e as Error)?.name !== 'AbortError') toast('Não foi possível abrir o compartilhamento. Use os passos abaixo.', 'error')
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Publicar no Instagram"
+      description={`${creative.kind === 'story' ? `Story ${creative.order}` : `Post ${creative.order}`} · ${brand.name}`}
+      size="lg"
+      footer={
+        scheduleAction ? (
+          <Button variant="soft" className="w-full sm:w-auto" onClick={scheduleAction}>
+            <CalendarClock className="size-4" aria-hidden /> Prefiro agendar no Calendário
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="grid gap-6 px-5 py-4 md:grid-cols-[1.15fr_0.85fr] md:px-6">
+        <div>
+          {canShareFile && (
+            <div className="mb-5 rounded-2xl bg-brand-50 p-4">
+              <p className="text-sm text-brand-950">Mais rápido no celular: a legenda é copiada e a imagem vai direto para o app que você escolher.</p>
+              <Button className="mt-3 w-full" onClick={share}>
+                <Share2 className="size-4" aria-hidden /> Compartilhar imagem + legenda
+              </Button>
+            </div>
+          )}
+          <ol aria-label="Passo a passo">
+            <Step n={1} done={done.copy} title="Copie a legenda">
+              <div className="max-h-40 overflow-y-auto rounded-xl border border-line bg-slate-50 p-3 text-sm leading-relaxed whitespace-pre-line text-slate-800 scroll-thin">
+                {creative.caption}
+                <div className="mt-2 font-semibold text-brand-800">{creative.hashtags.join(' ')}</div>
+              </div>
+              <Button variant={done.copy ? 'secondary' : 'primary'} className="mt-2 w-full sm:w-auto" onClick={copy}>
+                {done.copy ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />} {done.copy ? 'Copiada' : 'Copiar legenda e hashtags'}
+              </Button>
+            </Step>
+            <Step n={2} done={done.image} title="Salve a imagem">
+              <Button variant="secondary" className="w-full sm:w-auto" onClick={download}>
+                <Download className="size-4" aria-hidden /> Baixar PNG (1080 px)
+              </Button>
+            </Step>
+            <Step n={3} done={done.insta} title="Abra o Instagram e cole a legenda">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <a
+                  href={links.instagramCreate}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setDone((d) => ({ ...d, insta: true }))}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink hover:bg-slate-50"
+                >
+                  <InstagramIcon className="size-4" /> Abrir Instagram <ExternalLink className="size-3.5" aria-hidden />
+                  <span className="sr-only">(abre em nova aba)</span>
+                </a>
+                <a
+                  href={links.whatsAppShare}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-950 hover:bg-emerald-100"
+                >
+                  <MessageCircle className="size-4" aria-hidden /> Enviar no WhatsApp <ExternalLink className="size-3.5" aria-hidden />
+                  <span className="sr-only">(abre em nova aba)</span>
+                </a>
+              </div>
+            </Step>
+          </ol>
+        </div>
+
+        <div className="grid content-start gap-4">
+          <section aria-labelledby="pub-hours" className="rounded-2xl border border-brand-200 bg-brand-50/50 p-4">
+            <h3 id="pub-hours" className="flex items-center gap-2 text-sm font-bold text-brand-950">
+              <Clock className="size-4 text-brand-700" aria-hidden /> Melhores horários
+            </h3>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {tips.bestHours.map((h) => (
+                <li key={h} className="rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-bold text-brand-900">
+                  {h}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-brand-950">
+              <b>Melhores dias:</b> {tips.bestDays.join(', ')}. <b>Ritmo:</b> {tips.frequency}.
+            </p>
+          </section>
+          <details className="rounded-2xl border border-line p-4">
+            <summary className="cursor-pointer text-sm font-bold">Dicas para mais alcance</summary>
+            <ul className="mt-2 grid gap-1.5 text-sm text-slate-700">
+              <li>• Marque a localização ({brand.city || 'sua cidade'}).</li>
+              <li>• Reposte nos Stories com enquete ou caixa de pergunta.</li>
+              {tips.storyHooks.slice(0, 2).map((h) => (
+                <li key={h}>• {h}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      </div>
+    </Dialog>
+  )
+}

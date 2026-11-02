@@ -1,7 +1,5 @@
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { toPng } from 'html-to-image'
-import JSZip from 'jszip'
 import { BASE_W, baseHeight, CreativeCanvas, type BrandMark } from '../components/creative/Creative'
 import { track } from './telemetry'
 import type { Creative, Palette, PostFormat, StyleId } from './types'
@@ -17,6 +15,8 @@ export interface ExportJob {
 
 /** Renders a creative off-screen at full resolution (1080 px wide) and returns a PNG data URL. */
 export async function renderPng(job: ExportJob): Promise<string> {
+  // Export libraries are only downloaded on the first export (keeps the initial bundle small).
+  const { toPng } = await import('html-to-image')
   const H = baseHeight(job.creative.kind, job.format)
   const host = document.createElement('div')
   host.style.cssText = `position:fixed;left:-20000px;top:0;width:${BASE_W}px;height:${H}px;pointer-events:none;`
@@ -52,6 +52,7 @@ export async function makeZip(
   files: { name: string; dataUrl: string }[],
   extraTextFiles?: { name: string; content: string }[],
 ) {
+  const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
   for (const f of files) {
     zip.file(f.name, f.dataUrl.split(',')[1], { base64: true })

@@ -164,7 +164,8 @@ interface State {
   setStyle: (s: Partial<StyleSel>) => void
   markDone: (step: 1 | 2 | 3) => void
   newExamples: () => void
-  runGeneration: (customParams?: Partial<GenParams>) => Promise<Generation>
+  /** `signal` cancels the request; `offline` uses the local template engine (labelled as such, never as AI). */
+  runGeneration: (customParams?: Partial<GenParams>, opts?: { signal?: AbortSignal; offline?: boolean }) => Promise<Generation>
   setActiveGen: (id: string) => void
   updateCreative: (genId: string, creative: Creative) => void
   removeCreative: (genId: string, id: string) => void
@@ -466,7 +467,7 @@ export const useApp = create<State>()(
       setStyle: (st) => set((s) => ({ style: { ...s.style, ...st } })),
       markDone: (step) => set((s) => ({ done: { ...s.done, [step]: true } })),
       newExamples: () => set((s) => ({ exampleSeed: s.exampleSeed + 1 })),
-      runGeneration: async (customParams) => {
+      runGeneration: async (customParams, opts = {}) => {
         const s = get()
         const version = s.generations.length + 1
         const params: GenParams = {
@@ -474,17 +475,23 @@ export const useApp = create<State>()(
           ...customParams,
         }
 
-        // 1. Backend: IA real + controle de qualidade
+        // 1. Backend: IA real + controle de qualidade (skipped when the user explicitly picks the offline model)
         let res: Response | null = null
-        try {
-          res = await fetch(api('/api/generate'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ params, version }),
-          })
-        } catch (e) {
-          console.warn('[MIDFLOW] Servidor indisponível, usando gerador local:', e)
+        if (!opts.offline) {
+          try {
+            res = await fetch(api('/api/generate'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ params, version }),
+              signal: opts.signal,
+            })
+          } catch (e) {
+            // A user cancel must not silently turn into a template generation.
+            if ((e as Error)?.name === 'AbortError') throw e
+            console.warn('[MIDFLOW] Servidor indisponível, usando gerador local:', e)
+          }
         }
+        opts.signal?.throwIfAborted()
 
         if (res?.ok) {
           const data = await res.json()

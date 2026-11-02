@@ -1,9 +1,30 @@
-import { api } from '../../lib/api'
-import { AlertTriangle, Bot, Radio, RotateCcw, ShieldCheck, Sparkles, UserCheck } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { AlertTriangle, Bell, Bot, Radio, RotateCcw, ShieldCheck, Sparkles, UserCheck } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, cx, Input, Label, Modal, Select, toast, Toggle } from '../../components/ui'
+import { Badge, Button, ChoiceGroup, ConfirmDialog, cx, Field, Input, toast, Toggle, usePref } from '../../components/ui'
+import { api } from '../../lib/api'
 import { useApp } from '../../lib/store'
+
+/** iOS-Settings-style group: a small heading above a rounded list of rows. */
+function Group({ id, icon, title, hint, children, tone }: { id: string; icon: ReactNode; title: string; hint?: ReactNode; children: ReactNode; tone?: 'danger' }) {
+  return (
+    <section aria-labelledby={id}>
+      <h2 id={id} className={cx('mb-2 flex items-center gap-2 px-1 text-sm font-bold', tone === 'danger' ? 'text-danger' : 'text-fg-muted')}>
+        {icon} {title}
+      </h2>
+      <div className={cx('rounded-2xl border bg-white shadow-card', tone === 'danger' ? 'border-red-200' : 'border-line')}>{children}</div>
+      {hint && <p className="mt-2 px-1 text-caption text-fg-subtle">{hint}</p>}
+    </section>
+  )
+}
+
+const NOTIFS = [
+  ['semanal', 'Lembrete semanal', 'Para criar e agendar os conteúdos da semana'],
+  ['socialTips', 'Melhores horários', 'Dicas de horários de publicação do seu segmento'],
+  ['datas', 'Datas comemorativas', 'Avisos de feriados e datas comerciais'],
+  ['novidades', 'Novidades da MIDFLOW', 'Atualizações e novos recursos'],
+] as const
+type NotifKey = (typeof NOTIFS)[number][0]
 
 export function Settings() {
   const nav = useNavigate()
@@ -14,151 +35,136 @@ export function Settings() {
 
   const [userName, setUserName] = useState(user?.name ?? '')
   const [userEmail, setUserEmail] = useState(user?.email ?? '')
+  const [nameError, setNameError] = useState('')
+  const [notifs, setNotifs] = usePref<Record<NotifKey, boolean>>('mf.settings.notifs', { semanal: true, novidades: true, datas: true, socialTips: true })
+  const [feedFormat, setFeedFormat] = usePref<'4:5' | '1:1'>('mf.settings.feedFormat', '4:5')
+  const [network, setNetwork] = usePref<'instagram' | 'whatsapp'>('mf.settings.network', 'instagram')
+  const [confirmDemo, setConfirmDemo] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
 
-  const [n, setN] = useState({
-    semanal: true,
-    novidades: true,
-    datas: true,
-    socialTips: true,
-  })
-
-  const [confirm, setConfirm] = useState(false)
-
-  const handleSaveAccount = () => {
+  const saveAccount = (e: React.FormEvent) => {
+    e.preventDefault()
     if (!userName.trim()) {
-      toast('Digite o seu nome', 'error')
+      setNameError('Digite o seu nome.')
+      document.getElementById('st-name')?.focus()
       return
     }
+    setNameError('')
     login({ name: userName.trim(), email: userEmail.trim() })
-    toast('Dados da conta atualizados!')
+    toast('Dados da conta atualizados')
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-6">
-      {/* Conta */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2.5">
-          <UserCheck className="size-5 text-brand-700" />
-          <h2 className="text-lg font-bold text-ink">Conta & Perfil</h2>
-        </div>
-        <p className="mt-1 text-sm text-slate-500">Seus dados de identificação na plataforma.</p>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="st-name">Nome completo</Label>
-            <Input id="st-name" value={userName} onChange={(e) => setUserName(e.target.value)} />
+    <div className="mx-auto grid max-w-2xl gap-8">
+      <Group id="st-account" icon={<UserCheck className="size-4" aria-hidden />} title="Conta e perfil">
+        <form onSubmit={saveAccount} noValidate className="grid gap-4 p-4 sm:p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nome completo" id="st-name" required error={nameError}>
+              <Input autoComplete="name" value={userName} onChange={(e) => setUserName(e.target.value)} />
+            </Field>
+            <Field label="E-mail de acesso" id="st-email">
+              <Input type="email" autoComplete="email" inputMode="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} />
+            </Field>
           </div>
-          <div>
-            <Label htmlFor="st-email">E-mail de acesso</Label>
-            <Input id="st-email" type="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} />
+          <div className="flex justify-end">
+            <Button type="submit" className="w-full sm:w-auto">
+              Salvar dados da conta
+            </Button>
           </div>
-        </div>
-
-        <div className="mt-5 flex justify-end">
-          <Button size="sm" onClick={handleSaveAccount}>
-            Salvar dados da conta
-          </Button>
-        </div>
-      </Card>
+        </form>
+      </Group>
 
       <AIStatusCard />
 
-      {/* Redes Sociais & Assistente de Publicação */}
-      <Card className="p-6">
-        <div className="flex items-center gap-2.5">
-          <Radio className="size-5 text-brand-700" />
-          <h2 className="text-lg font-bold text-ink">Publicação em Redes Sociais</h2>
+      <Group id="st-publish" icon={<Radio className="size-4" aria-hidden />} title="Publicação" hint="Usado como padrão no assistente de publicação e no calendário.">
+        <div className="grid gap-5 p-4 sm:p-5">
+          <ChoiceGroup
+            legend="Formato padrão para o Feed"
+            variant="card"
+            value={feedFormat}
+            onChange={setFeedFormat}
+            options={[
+              { value: '4:5', label: '4:5 Retrato', description: 'Ocupa mais tela no Feed (recomendado)' },
+              { value: '1:1', label: '1:1 Quadrado', description: 'Formato tradicional' },
+            ]}
+          />
+          <ChoiceGroup
+            legend="Rede social prioritária"
+            variant="card"
+            value={network}
+            onChange={setNetwork}
+            options={[
+              { value: 'instagram', label: 'Instagram', description: 'Feed + Stories' },
+              { value: 'whatsapp', label: 'WhatsApp Business', description: 'Status + mensagens' },
+            ]}
+          />
         </div>
-        <p className="mt-1 text-sm text-slate-500">
-          Personalize as regras padrão para o assistente de publicação e calendário.
-        </p>
+      </Group>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="pref-format">Formato padrão para o Feed</Label>
-            <Select id="pref-format" defaultValue="4:5">
-              <option value="4:5">4:5 Retrato (Ocupa mais tela no Feed - Recomendado)</option>
-              <option value="1:1">1:1 Quadrado Tradicional</option>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="pref-network">Rede social prioritária</Label>
-            <Select id="pref-network" defaultValue="instagram">
-              <option value="instagram">Instagram (Feed + Stories)</option>
-              <option value="whatsapp">WhatsApp Business (Status + Mensagens)</option>
-            </Select>
-          </div>
-        </div>
-      </Card>
-
-      {/* Notificações */}
-      <Card className="p-6">
-        <h2 className="text-lg font-bold">Notificações & Lembretes</h2>
-        <div className="mt-5 grid gap-4">
-          {[
-            ['semanal', 'Lembrete semanal para criar e agendar conteúdos'],
-            ['socialTips', 'Dicas de melhores horários de publicação do meu segmento'],
-            ['datas', 'Avisos de datas comemorativas e feriados comerciais'],
-            ['novidades', 'Atualizações e novos recursos da MIDFLOW'],
-          ].map(([k, l]) => (
-            <Toggle
-              key={k}
-              on={n[k as keyof typeof n]}
-              onChange={(v) => setN({ ...n, [k]: v })}
-              label={<span className="font-medium">{l}</span>}
-            />
+      <Group id="st-notifs" icon={<Bell className="size-4" aria-hidden />} title="Notificações e lembretes">
+        <ul className="divide-y divide-line">
+          {NOTIFS.map(([k, label, desc]) => (
+            <li key={k} className="px-4 py-3 sm:px-5">
+              <Toggle on={notifs[k]} onChange={(v) => setNotifs({ ...notifs, [k]: v })} label={<span className="font-semibold">{label}</span>} description={desc} />
+            </li>
           ))}
-        </div>
-      </Card>
+        </ul>
+      </Group>
 
-      {/* Armazenamento & Demonstração */}
-      <Card className="p-6">
-        <h2 className="text-lg font-bold">Armazenamento & Demonstração</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Seus dados e criações ficam salvos localmente neste navegador com sincronização contínua.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              resetCreate()
-              toast('Fluxo de criação reiniciado')
-              nav('/app/criar/1')
-            }}
-          >
-            <RotateCcw className="size-4" /> Reiniciar fluxo de criação
-          </Button>
-          <Button variant="danger" onClick={() => setConfirm(true)}>
-            <Sparkles className="size-4" /> Restaurar dados de demonstração
-          </Button>
-        </div>
-      </Card>
-
-      {/* Modal Confirmar Demonstração */}
-      <Modal open={confirm} onClose={() => setConfirm(false)} title="Restaurar demonstração completa?">
-        <div className="p-6">
-          <p className="text-sm text-slate-600">
-            A empresa ativa, o briefing, as gerações e o calendário voltarão para o exemplo do Studio Aurora. Deseja
-            continuar?
-          </p>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirm(false)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                loadDemo()
-                setConfirm(false)
-                toast('Demonstração restaurada com sucesso')
-                nav('/app')
-              }}
-            >
-              Restaurar
-            </Button>
+      <Group id="st-data" icon={<RotateCcw className="size-4" aria-hidden />} title="Dados e demonstração" hint="Seus dados e criações ficam salvos neste navegador.">
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div>
+            <p className="font-semibold">Reiniciar fluxo de criação</p>
+            <p className="text-sm text-fg-subtle">Limpa o rascunho atual. Biblioteca e calendário são mantidos.</p>
           </div>
+          <Button variant="secondary" className="shrink-0" onClick={() => setConfirmReset(true)}>
+            <RotateCcw className="size-4" aria-hidden /> Reiniciar
+          </Button>
         </div>
-      </Modal>
+      </Group>
+
+      <Group id="st-danger" tone="danger" icon={<AlertTriangle className="size-4" aria-hidden />} title="Zona de risco">
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div>
+            <p className="font-semibold">Restaurar dados de demonstração</p>
+            <p className="text-sm text-fg-subtle">Substitui empresa, briefing, gerações e calendário pelo exemplo do Studio Aurora.</p>
+          </div>
+          <Button variant="danger" className="shrink-0" onClick={() => setConfirmDemo(true)}>
+            <Sparkles className="size-4" aria-hidden /> Restaurar
+          </Button>
+        </div>
+      </Group>
+
+      <ConfirmDialog
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+        title="Reiniciar fluxo de criação?"
+        confirmLabel="Reiniciar"
+        onConfirm={() => {
+          resetCreate()
+          setConfirmReset(false)
+          toast('Fluxo de criação reiniciado')
+          nav('/app/criar/1')
+        }}
+      >
+        <p className="text-sm text-fg-muted">O briefing e as escolhas das etapas 1 a 3 voltam ao início. Sua biblioteca e o calendário não são alterados.</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmDemo}
+        onClose={() => setConfirmDemo(false)}
+        title="Restaurar demonstração completa?"
+        confirmLabel="Restaurar"
+        danger
+        onConfirm={() => {
+          loadDemo()
+          setConfirmDemo(false)
+          toast('Demonstração restaurada')
+          nav('/app')
+        }}
+      >
+        <p className="text-sm text-fg-muted">A empresa ativa, o briefing, as gerações e o calendário voltarão para o exemplo do Studio Aurora. Essa ação não pode ser desfeita.</p>
+      </ConfirmDialog>
     </div>
   )
 }
@@ -207,84 +213,68 @@ function AIStatusCard() {
   const recentError = status && status !== 'offline' && status.lastErrorAt && (!status.lastOkAt || status.lastErrorAt > status.lastOkAt)
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <Bot className="size-5 text-brand-700" />
-          <h2 className="text-lg font-bold text-ink">Motor de Inteligência Artificial</h2>
+    <Group id="st-ai" icon={<Bot className="size-4" aria-hidden />} title="Motor de inteligência artificial">
+      <div className="p-4 sm:p-5" aria-busy={status === null}>
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-semibold">Status</p>
+          {status === null ? (
+            <span className="text-caption text-fg-subtle">verificando…</span>
+          ) : ok && !recentError ? (
+            <Badge className="bg-emerald-100 text-emerald-900">
+              <ShieldCheck className="size-3.5" aria-hidden /> IA ativa
+            </Badge>
+          ) : (
+            <Badge className="bg-amber-100 text-amber-950">
+              <AlertTriangle className="size-3.5" aria-hidden /> {ok ? 'Com falhas recentes' : 'IA desligada'}
+            </Badge>
+          )}
         </div>
-        {status === null ? (
-          <span className="text-xs text-slate-500">verificando…</span>
-        ) : ok && !recentError ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
-            <ShieldCheck className="size-3" /> IA ativa
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
-            <AlertTriangle className="size-3" /> {ok ? 'Com falhas recentes' : 'IA desligada'}
-          </span>
+
+        {status === 'offline' && <p className="mt-3 text-sm text-fg-muted">Esta versão está rodando sem o servidor da MIDFLOW, então os conteúdos vêm de modelos prontos (sem IA).</p>}
+
+        {status && status !== 'offline' && (
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-caption text-fg-subtle">Provedor / modelo de texto</dt>
+              <dd className="font-semibold text-ink">{status.aiEnabled ? `${status.provider} · ${status.model}` : 'Não configurado'}</dd>
+            </div>
+            <div>
+              <dt className="text-caption text-fg-subtle">Imagens com IA</dt>
+              <dd className="font-semibold text-ink">
+                {status.imageProvider === 'none' ? 'Desligado — usando fotos curadas' : `${status.imageProvider === 'cloudflare' ? 'Cloudflare Workers AI' : 'Google Gemini'} · ${status.imageModel}`}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-caption text-fg-subtle">Nota mínima de qualidade</dt>
+              <dd className="font-semibold text-ink">{status.minQuality}/100 (abaixo disso a IA revisa o próprio texto)</dd>
+            </div>
+          </dl>
         )}
-      </div>
-
-      {status === 'offline' && (
-        <p className="mt-3 text-sm text-slate-600">
-          Esta versão está rodando sem o servidor da MIDFLOW, então os conteúdos vêm de modelos prontos (sem IA).
-        </p>
-      )}
-
-      {status && status !== 'offline' && (
-        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-xs text-slate-500">Provedor / modelo de texto</dt>
-            <dd className="font-semibold text-ink">{status.aiEnabled ? `${status.provider} · ${status.model}` : 'Não configurado'}</dd>
+        {status && status !== 'offline' && (
+          <div className="mt-3 grid gap-3">
+            {recentError && status.lastError && <div className="rounded-xl bg-warning-soft p-3 text-caption text-amber-950 ring-1 ring-amber-200">Último erro: {status.lastError}</div>}
+            {status.imageLastError && (
+              <div className="rounded-xl bg-warning-soft p-3 text-caption text-amber-950 ring-1 ring-amber-200">Último erro de imagem: {status.imageLastError} (as peças seguem com fotos curadas)</div>
+            )}
+            {!status.aiEnabled && (
+              <div className="rounded-xl bg-slate-50 p-3 text-caption text-fg-muted ring-1 ring-line">
+                Para ativar, o administrador define <code>GEMINI_API_KEY</code> no arquivo <code>.env</code> do servidor e reinicia. Enquanto isso, os conteúdos usam modelos prontos e aparecem marcados
+                como "Modelo de reserva".
+              </div>
+            )}
           </div>
-          <div>
-            <dt className="text-xs text-slate-500">Imagens com IA (botão "Gerar nova imagem IA")</dt>
-            <dd className="font-semibold text-ink">
-              {status.imageProvider === 'none'
-                ? 'Desligado — usando fotos curadas'
-                : `${status.imageProvider === 'cloudflare' ? 'Cloudflare Workers AI' : 'Google Gemini'} · ${status.imageModel}`}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Nota mínima de qualidade</dt>
-            <dd className="font-semibold text-ink">{status.minQuality}/100 (abaixo disso a IA revisa o próprio texto)</dd>
-          </div>
-          {recentError && status.lastError && (
-            <div className="sm:col-span-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
-              Último erro: {status.lastError}
-            </div>
-          )}
-          {status.imageLastError && (
-            <div className="sm:col-span-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 ring-1 ring-amber-200">
-              Último erro de imagem: {status.imageLastError} (as peças seguem com fotos curadas)
-            </div>
-          )}
-          {!status.aiEnabled && (
-            <div className="sm:col-span-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-line">
-              Para ativar, o administrador define <code>GEMINI_API_KEY</code> no arquivo <code>.env</code> do servidor e reinicia.
-              Enquanto isso, os conteúdos usam modelos prontos e aparecem marcados como "Modelo de reserva".
-            </div>
-          )}
-        </dl>
-      )}
+        )}
 
-      {result && (
-        <div
-          className={cx(
-            'mt-4 rounded-xl p-3.5 text-xs font-medium ring-1',
-            result.ok ? 'bg-emerald-50 text-emerald-900 ring-emerald-200' : 'bg-red-50 text-red-900 ring-red-200',
-          )}
-        >
-          {result.message}
+        <div role="status" aria-live="polite">
+          {result && <p className={cx('mt-4 rounded-xl p-3.5 text-sm font-medium ring-1', result.ok ? 'bg-emerald-50 text-emerald-900 ring-emerald-200' : 'bg-danger-soft text-red-900 ring-red-200')}>{result.message}</p>}
         </div>
-      )}
 
-      <div className="mt-5 flex justify-end border-t border-line pt-4">
-        <Button variant="secondary" size="sm" onClick={test} disabled={testing || status === 'offline'}>
-          {testing ? 'Testando…' : 'Testar conexão'}
-        </Button>
+        <div className="mt-4 flex justify-end border-t border-line pt-4">
+          <Button variant="secondary" onClick={test} loading={testing} disabled={status === 'offline'} className="w-full sm:w-auto">
+            {testing ? 'Testando…' : 'Testar conexão'}
+          </Button>
+        </div>
       </div>
-    </Card>
+    </Group>
   )
 }

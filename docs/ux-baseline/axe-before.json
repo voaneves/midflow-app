@@ -1,0 +1,395 @@
+[
+  {
+    "route": "/",
+    "width": 360,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/",
+    "width": 768,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/",
+    "width": 1280,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/entrar",
+    "width": 360,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/entrar",
+    "width": 768,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/entrar",
+    "width": 1280,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/cadastro",
+    "width": 360,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/cadastro",
+    "width": 768,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/cadastro",
+    "width": 1280,
+    "violations": 1,
+    "serious": 1,
+    "ids": [
+      "color-contrast(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(26)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(28)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(23)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/criar/1",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(15)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/criar/1",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(16)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/criar/1",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(12)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/posts",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(5)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/posts",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(7)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/posts",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(3)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/biblioteca",
+    "width": 360,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "button-name(8)",
+      "color-contrast(9)",
+      "label-content-name-mismatch(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/biblioteca",
+    "width": 768,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "button-name(8)",
+      "color-contrast(10)",
+      "label-content-name-mismatch(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/biblioteca",
+    "width": 1280,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "button-name(8)",
+      "color-contrast(8)",
+      "label-content-name-mismatch(5)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/calendario",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(8)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/calendario",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(11)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/calendario",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(8)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/marca",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(9)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/marca",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(15)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/marca",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(10)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/relatorios",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(25)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/relatorios",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(27)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/relatorios",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(22)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/planos",
+    "width": 360,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(15)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/planos",
+    "width": 768,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(16)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/planos",
+    "width": 1280,
+    "violations": 2,
+    "serious": 2,
+    "ids": [
+      "color-contrast(12)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/config",
+    "width": 360,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "color-contrast(10)",
+      "definition-list(1)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/config",
+    "width": 768,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "color-contrast(13)",
+      "definition-list(1)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  },
+  {
+    "route": "/app/config",
+    "width": 1280,
+    "violations": 3,
+    "serious": 3,
+    "ids": [
+      "color-contrast(8)",
+      "definition-list(1)",
+      "label-content-name-mismatch(1)"
+    ],
+    "overflowX": false
+  }
+]

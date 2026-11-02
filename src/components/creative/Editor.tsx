@@ -1,117 +1,168 @@
-import { useState, useEffect } from 'react'
 import {
+  CheckCircle2,
+  ChevronUp,
+  DollarSign,
   Download,
+  ImageIcon,
   ImagePlus,
+  LayoutTemplate,
+  List,
+  Loader2,
+  Palette as PaletteIcon,
+  Quote as QuoteIcon,
+  Redo2,
   RotateCcw,
   Save,
   Sparkles,
-  Wand2,
   Tag as TagIcon,
-  List,
-  CheckCircle2,
-  DollarSign,
-  Quote as QuoteIcon,
+  Type,
+  Undo2,
   Vote,
-  LayoutTemplate,
+  Wand2,
+  X,
+  FileText,
 } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { derivePalette } from '../../lib/color'
 import { generateCustomImageWithAI, rewriteCreativeWithAI } from '../../lib/aiService'
 import { segmentDef, STYLES } from '../../lib/data'
+import { COPY_LIMITS as L } from '../../lib/limits'
 import { PHOTOS, photoUrl } from '../../lib/photos'
 import { useApp } from '../../lib/store'
 import { track } from '../../lib/telemetry'
-import type { Creative as CreativeT, Palette, PostFormat, StyleId, Variant } from '../../lib/types'
-import { Button, cx, Input, Label, Modal, Textarea, toast } from '../ui'
-import { Creative, type BrandMark } from './Creative'
-import { exportCreatives, jobFor, readFile } from './parts'
+import type { Creative as CreativeT, Variant } from '../../lib/types'
+import { Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, IconButton, Input, Select, Textarea, toast, useIsDesktop } from '../ui'
+import { Creative } from './Creative'
+import { exportCreatives, jobFor, readFile, type Look } from './parts'
 
 interface Props {
   open: boolean
   onClose: () => void
   creative: CreativeT | null
-  look: { palette: Palette; style: StyleId; format: PostFormat; brand: BrandMark }
+  look: Look
   onSave: (c: CreativeT) => void
 }
 
 const photoIds = Object.keys(PHOTOS).filter((k) => !k.startsWith('st-'))
 
 const VARIANTS: { id: Variant; label: string; icon: typeof TagIcon }[] = [
-  { id: 'photo', label: 'Foto Destaque', icon: TagIcon },
-  { id: 'list', label: 'Lista com Ícones', icon: List },
-  { id: 'icons', label: '3 Destaques', icon: CheckCircle2 },
-  { id: 'beforeafter', label: 'Antes e Depois', icon: LayoutTemplate },
-  { id: 'offer', label: 'Oferta com Preço', icon: DollarSign },
-  { id: 'quote', label: 'Depoimento 5★', icon: QuoteIcon },
+  { id: 'photo', label: 'Foto destaque', icon: TagIcon },
+  { id: 'list', label: 'Lista', icon: List },
+  { id: 'icons', label: '3 destaques', icon: CheckCircle2 },
+  { id: 'beforeafter', label: 'Antes e depois', icon: LayoutTemplate },
+  { id: 'offer', label: 'Oferta', icon: DollarSign },
+  { id: 'quote', label: 'Depoimento', icon: QuoteIcon },
   { id: 'poll', label: 'Enquete', icon: Vote },
 ]
+
+type Tool = 'texto' | 'layout' | 'cores' | 'imagem' | 'legenda'
+const TOOLS: { id: Tool; label: string; icon: typeof Type }[] = [
+  { id: 'texto', label: 'Texto', icon: Type },
+  { id: 'layout', label: 'Layout', icon: LayoutTemplate },
+  { id: 'cores', label: 'Cores', icon: PaletteIcon },
+  { id: 'imagem', label: 'Imagem', icon: ImageIcon },
+  { id: 'legenda', label: 'Legenda', icon: FileText },
+]
+
+type RewriteMode = 'vendedor' | 'curto' | 'sofisticado' | 'descontraido' | 'educativo'
+
+/** "12/60" under a field; warns from 90% and when the quality-gate limit is exceeded. */
+function Limit({ value, max, min, unit = 'caracteres' }: { value: number; max: number; min?: number; unit?: string }) {
+  const over = value > max
+  const under = min !== undefined && value < min
+  const near = !over && value >= max * 0.9
+  return (
+    <p className={cx('mt-1 text-right text-xs tabular-nums', over || under ? 'font-semibold text-danger' : near ? 'font-semibold text-warning' : 'text-fg-subtle')}>
+      {over ? `Acima do limite recomendado (${max} ${unit}) · ` : under ? `Abaixo do mínimo recomendado (${min}) · ` : ''}
+      {value}/{max}
+    </p>
+  )
+}
+
+/** Undo/redo history. Typing in the same field within 1 s is merged into one step. */
+function useHistory(initial: CreativeT | null) {
+  const [state, setState] = useState<{ past: CreativeT[]; cur: CreativeT | null; future: CreativeT[] }>({ past: [], cur: initial, future: [] })
+  const last = useRef<{ key: string; t: number }>({ key: '', t: 0 })
+  const reset = (c: CreativeT | null) => setState({ past: [], cur: c, future: [] })
+  const commit = (next: CreativeT, key = '') => {
+    const now = Date.now()
+    const merge = key && key === last.current.key && now - last.current.t < 1000
+    last.current = { key, t: now }
+    setState((s) => (s.cur ? { past: merge ? s.past : [...s.past.slice(-49), s.cur], cur: next, future: [] } : s))
+  }
+  const undo = () => setState((s) => (s.past.length && s.cur ? { past: s.past.slice(0, -1), cur: s.past[s.past.length - 1], future: [s.cur, ...s.future] } : s))
+  const redo = () => setState((s) => (s.future.length && s.cur ? { past: [...s.past, s.cur], cur: s.future[0], future: s.future.slice(1) } : s))
+  return { c: state.cur, commit, undo, redo, reset, canUndo: state.past.length > 0, canRedo: state.future.length > 0 }
+}
 
 export function Editor({ open, onClose, creative, look, onSave }: Props) {
   const brand = useApp((s) => s.brand)
   const styleState = useApp((s) => s.style)
   const segment = useApp((s) => s.briefing.segment || s.brand.segment)
-  const [c, setC] = useState<CreativeT | null>(creative)
-  const [tab, setTab] = useState<'texto' | 'visual' | 'legenda'>('texto')
-  const [aiMode, setAiMode] = useState<'vendedor' | 'curto' | 'sofisticado' | 'descontraido' | 'educativo'>('vendedor')
+  const desktop = useIsDesktop()
+  const h = useHistory(creative)
+  const c = h.c
+  const [tool, setTool] = useState<Tool>('texto')
+  const [expanded, setExpanded] = useState(false)
+  const [aiMode, setAiMode] = useState<RewriteMode>('vendedor')
   const [seed, setSeed] = useState(1)
-  const [rewriting, setRewriting] = useState(false)
+  const [rewriting, setRewriting] = useState<AbortController | null>(null)
   const [imgPrompt, setImgPrompt] = useState('')
-  const [imgType, setImgType] = useState<'fotos' | 'ilustracoes' | 'render'>(
-    styleState.imageType === 'ilustracoes' || styleState.imageType === 'render' ? styleState.imageType : 'fotos',
-  )
-  const [generatingImg, setGeneratingImg] = useState(false)
+  const [imgType, setImgType] = useState<'fotos' | 'ilustracoes' | 'render'>(styleState.imageType === 'ilustracoes' || styleState.imageType === 'render' ? styleState.imageType : 'fotos')
+  const [generatingImg, setGeneratingImg] = useState<AbortController | null>(null)
+  const [confirmClose, setConfirmClose] = useState(false)
 
   useEffect(() => {
-    setC(creative)
-    setTab('texto')
+    h.reset(creative)
+    setTool('texto')
+    setExpanded(false)
+    // reset only when another creative is opened
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creative])
 
-  if (!c) return null
-
-  const set = (p: Partial<CreativeT>) => setC({ ...c, ...p })
-
-  const changeVariant = (v: Variant) => {
-    const updates: Partial<CreativeT> = { variant: v }
-    if (v === 'list' && (!c.bullets || !c.bullets.length)) {
-      updates.bullets = ['Atendimento exclusivo e individual', 'Produtos e técnicas profissionais', 'Resultados visíveis e duradouros']
-    }
-    if (v === 'offer' && !c.price) {
-      updates.price = { label: 'A partir de', value: '89', cents: '90' }
-    }
-    if (v === 'quote' && !c.quote) {
-      updates.quote = {
-        text: 'Melhor experiência que já tive! Atendimento impecável e resultado maravilhoso.',
-        author: 'Cliente Satisfeita',
-      }
-    }
-    if (v === 'poll' && (!c.poll || !c.poll.length)) {
-      updates.poll = ['Com certeza!', 'Quero saber mais']
-    }
-    if (v === 'beforeafter' && !c.photo2) {
-      updates.photo2 = 'transform'
-    }
-    set(updates)
-    toast(`Modelo alterado para ${VARIANTS.find((x) => x.id === v)?.label}`)
+  const dirty = !!c && !!creative && JSON.stringify(c) !== JSON.stringify(creative)
+  const requestClose = () => {
+    rewriting?.abort()
+    generatingImg?.abort()
+    if (dirty) setConfirmClose(true)
+    else onClose()
+  }
+  const save = () => {
+    if (!c) return
+    onSave({ ...c, bullets: c.bullets?.map((b) => b.trim()).filter(Boolean) })
+    track('edit', { brandName: brand.name })
+    toast('Alterações salvas')
+    onClose()
   }
 
-  const palettes: { label: string; p: Palette }[] = [
+  if (!c) return null
+  const set = (p: Partial<CreativeT>, key = '') => h.commit({ ...c, ...p }, key)
+
+  const changeVariant = (v: Variant) => {
+    const u: Partial<CreativeT> = { variant: v }
+    if (v === 'list' && !c.bullets?.length) u.bullets = ['Atendimento exclusivo e individual', 'Produtos e técnicas profissionais', 'Resultados visíveis e duradouros']
+    if (v === 'offer' && !c.price) u.price = { label: 'A partir de', value: '89', cents: '90' }
+    if (v === 'quote' && !c.quote) u.quote = { text: 'Melhor experiência que já tive! Atendimento impecável e resultado maravilhoso.', author: 'Cliente satisfeita' }
+    if (v === 'poll' && !c.poll?.length) u.poll = ['Com certeza!', 'Quero saber mais']
+    if (v === 'beforeafter' && !c.photo2) u.photo2 = 'transform'
+    set(u)
+  }
+
+  const palettes = [
     { label: 'Marca', p: look.palette },
     { label: 'Sugerida', p: derivePalette(segmentDef(segment).palette) },
     { label: 'Neutra', p: derivePalette(['#1B1B1B', '#8C8C8C', '#E6E6E6', '#FAFAFA']) },
     { label: 'Teal', p: derivePalette(['#0B4D3D', '#12B386', '#A8EAD5', '#F3F7F6']) },
   ]
   const activePalette = c.palette ?? look.palette
+  const paletteKey = palettes.find((x) => JSON.stringify(x.p) === JSON.stringify(activePalette))?.label ?? ''
 
   const handleRewrite = async () => {
-    setRewriting(true)
+    if (rewriting) return rewriting.abort()
+    const ctl = new AbortController()
+    setRewriting(ctl)
     try {
-      const res = await rewriteCreativeWithAI({
-        creative: c,
-        mode: aiMode,
-        brandName: brand.name,
-        segment: segment || 'beleza',
-        city: brand.city,
-        seed,
-      })
+      const res = await rewriteCreativeWithAI({ creative: c, mode: aiMode, brandName: brand.name, segment: segment || 'beleza', city: brand.city, seed, signal: ctl.signal })
       set({
         headline: res.headline || c.headline,
         highlight: res.highlight || c.highlight,
@@ -121,21 +172,21 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
         caption: res.caption || c.caption,
       })
       setSeed(seed + 1)
-      toast(
-        res.engine === 'gemini' || res.engine === 'openai'
-          ? `Texto reescrito com IA (modo ${aiMode})`
-          : `Texto reescrito com modelo de reserva (IA indisponível)`,
-        res.engine === 'gemini' || res.engine === 'openai' ? 'ok' : 'info',
-      )
+      const ai = res.engine === 'gemini' || res.engine === 'openai'
+      toast(ai ? 'Texto reescrito com IA' : 'Texto reescrito com o modelo de reserva (IA indisponível)', ai ? 'ok' : 'info')
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') toast('Reescrita cancelada', 'info')
+      else toast('Não foi possível reescrever agora.', 'error')
     } finally {
-      setRewriting(false)
+      setRewriting(null)
     }
   }
 
   const handleGenerateAIImage = async () => {
-    setGeneratingImg(true)
+    if (generatingImg) return generatingImg.abort()
+    const ctl = new AbortController()
+    setGeneratingImg(ctl)
     try {
-      const nextSeed = Date.now() % 100000
       const url = await generateCustomImageWithAI({
         prompt: imgPrompt.trim() || undefined,
         headline: c.headline,
@@ -145,417 +196,435 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
         style: c.style ?? look.style,
         kind: c.kind,
         order: c.order,
-        seed: nextSeed,
+        seed: Date.now() % 100000,
         palette: activePalette,
+        signal: ctl.signal,
       })
       if (url) {
         set({ photo: url })
-        toast('Nova imagem contextual gerada com IA!')
-      } else {
-        toast('Não foi possível gerar a imagem agora.', 'error')
-      }
+        toast('Nova imagem aplicada')
+      } else toast('Não foi possível gerar a imagem agora. As fotos do catálogo continuam disponíveis.', 'error')
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') toast('Geração de imagem cancelada', 'info')
     } finally {
-      setGeneratingImg(false)
+      setGeneratingImg(null)
     }
   }
 
-  return (
-    <Modal open={open} onClose={onClose} title={c.kind === 'story' ? `Editar story ${c.order}` : `Editar post ${c.order}`} wide>
-      <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,340px)_1fr]">
-        <div className="mx-auto w-full max-w-[340px] lg:sticky lg:top-20 lg:self-start">
-          <div className="overflow-hidden rounded-2xl shadow-card">
-            <Creative c={c} style={c.style ?? look.style} palette={c.palette ?? look.palette} format={look.format} brand={look.brand} chrome={false} />
+  const headMax = c.kind === 'story' ? L.storyHeadlineChars : L.headlineChars
+  const highlightMissing = !!c.highlight && !c.headline.toLowerCase().includes(c.highlight.toLowerCase())
+
+  const photoPicker = (field: 'photo' | 'photo2', legend: string) => (
+    <fieldset>
+      <legend className="mb-2 text-sm font-semibold">{legend}</legend>
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+        <label className="grid aspect-square cursor-pointer place-items-center rounded-lg border-2 border-dashed border-slate-400 text-slate-600 hover:border-brand-500 hover:text-brand-800 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-focus has-[:focus-visible]:outline-solid">
+          <ImagePlus className="size-5" aria-hidden />
+          <span className="sr-only">Enviar foto do dispositivo</span>
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              if (f) set({ [field]: await readFile(f) })
+            }}
+          />
+        </label>
+        {c[field]?.startsWith('data:') && <img src={c[field]} alt="Foto enviada (selecionada)" className="aspect-square rounded-lg object-cover ring-3 ring-brand-600" />}
+        {photoIds.map((id, k) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => set({ [field]: id })}
+            aria-pressed={c[field] === id}
+            aria-label={`Foto ${k + 1} do catálogo`}
+            className={cx('overflow-hidden rounded-lg transition', c[field] === id ? 'ring-3 ring-brand-600 ring-offset-1' : 'opacity-90 hover:opacity-100')}
+          >
+            <img src={photoUrl(id)} alt="" loading="lazy" decoding="async" width={96} height={96} className="aspect-square w-full object-cover" />
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  )
+
+  const panels: Record<Tool, ReactNode> = {
+    texto: (
+      <div className="grid gap-4">
+        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-0 flex-1">
+              <Field label={<span className="flex items-center gap-1.5"><Sparkles className="size-4 text-brand-700" aria-hidden /> Reescrever com IA</span>}>
+                <Select value={aiMode} onChange={(e) => setAiMode(e.target.value as RewriteMode)} disabled={!!rewriting}>
+                  <option value="vendedor">Mais vendedor</option>
+                  <option value="curto">Mais curto e direto</option>
+                  <option value="sofisticado">Mais sofisticado</option>
+                  <option value="descontraido">Mais descontraído</option>
+                  <option value="educativo">Mais educativo</option>
+                </Select>
+              </Field>
+            </div>
+            <Button variant={rewriting ? 'secondary' : 'primary'} onClick={handleRewrite}>
+              {rewriting ? (
+                <>
+                  <X className="size-4" aria-hidden /> Cancelar
+                </>
+              ) : (
+                <>
+                  <Wand2 className="size-4" aria-hidden /> Reescrever
+                </>
+              )}
+            </Button>
           </div>
-          <p className="mt-3 text-center text-xs text-slate-500">A prévia atualiza instantaneamente enquanto você edita.</p>
+          <p role="status" className="mt-2 flex min-h-5 items-center gap-1.5 text-xs font-medium text-brand-900">
+            {rewriting && (
+              <>
+                <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden /> Reescrevendo título, apoio, CTA e legenda…
+              </>
+            )}
+          </p>
         </div>
-
-        <div className="min-w-0">
-          <div className="mb-5 flex gap-1 rounded-xl bg-slate-100 p-1">
-            {(['texto', 'visual', 'legenda'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cx('h-9 flex-1 rounded-lg text-[13px] font-semibold capitalize transition', tab === t ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-500 hover:text-ink')}
-              >
-                {t === 'texto' ? 'Texto e Conteúdo' : t === 'visual' ? 'Design e Imagens' : 'Legenda e Hashtags'}
-              </button>
-            ))}
+        <fieldset disabled={!!rewriting} className={cx('grid gap-4 transition', rewriting && 'opacity-60')}>
+          <legend className="sr-only">Textos da arte</legend>
+          <div>
+            <Field label="Etiqueta superior">
+              <Input value={c.tag ?? ''} onChange={(e) => set({ tag: e.target.value }, 'tag')} placeholder="Ex.: DICA, NOVIDADE" />
+            </Field>
+            <Limit value={(c.tag ?? '').length} max={L.tagChars} />
           </div>
-
-          {tab === 'texto' && (
-            <div className="grid gap-4">
-              {/* Seletor de Modelo de Arte */}
-              <div>
-                <Label>Modelo da Arte (Estrutura)</Label>
-                <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                  {VARIANTS.map((v) => {
-                    const on = c.variant === v.id
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onClick={() => changeVariant(v.id)}
-                        className={cx(
-                          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition',
-                          on ? 'border-brand-500 bg-brand-50 text-brand-900 shadow-sm' : 'border-line bg-white text-slate-600 hover:border-slate-300',
-                        )}
-                      >
-                        <v.icon className="size-3.5" />
-                        <span>{v.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Barra de Reescrita com IA */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-100 bg-brand-50/60 p-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="size-4 text-brand-600" />
-                  <span className="text-xs font-bold text-brand-900">Reescrever com IA:</span>
-                  <select
-                    value={aiMode}
-                    onChange={(e) => setAiMode(e.target.value as typeof aiMode)}
-                    className="h-8 rounded-lg border border-line bg-white px-2 text-xs font-semibold text-slate-700"
-                  >
-                    <option value="vendedor">Mais Vendedor</option>
-                    <option value="curto">Mais Curto & Direto</option>
-                    <option value="sofisticado">Mais Sofisticado</option>
-                    <option value="descontraido">Mais Descontraído</option>
-                    <option value="educativo">Mais Educativo</option>
-                  </select>
-                </div>
-                <Button variant="primary" size="sm" loading={rewriting} onClick={handleRewrite}>
-                  <Wand2 className="size-3.5" /> {rewriting ? 'Reescrevendo…' : 'Aplicar'}
-                </Button>
-              </div>
-
-              <div>
-                <Label htmlFor="ed-tag">Etiqueta Superior</Label>
-                <Input id="ed-tag" value={c.tag ?? ''} onChange={(e) => set({ tag: e.target.value })} placeholder="Ex: DICA, NOVIDADE, PROMOÇÃO" />
-              </div>
-
-              <div>
-                <Label htmlFor="ed-head">Título Principal</Label>
-                <Textarea id="ed-head" value={c.headline} max={110} onChange={(e) => set({ headline: e.target.value })} className="min-h-[70px]" />
-              </div>
-
-              <div>
-                <Label htmlFor="ed-hl" hint="(trecho destacado na tipografia especial)">Palavra de Destaque</Label>
-                <Input id="ed-hl" value={c.highlight ?? ''} onChange={(e) => set({ highlight: e.target.value })} placeholder="Ex: resultado, autocuidado" />
-              </div>
-
-              <div>
-                <Label htmlFor="ed-sub">Subtítulo / Apoio</Label>
-                <Input id="ed-sub" value={c.sub ?? ''} onChange={(e) => set({ sub: e.target.value })} placeholder="Linha explicativa curta" />
-              </div>
-
-              {/* Campos dinâmicos conforme a variante */}
-              {(c.variant === 'list' || c.bullets) && (
-                <div>
-                  <Label htmlFor="ed-bul" hint="(um item por linha)">Itens da Lista (Benefícios)</Label>
-                  <Textarea
-                    id="ed-bul"
-                    value={(c.bullets ?? []).join('\n')}
-                    onChange={(e) => set({ bullets: e.target.value.split('\n').filter(Boolean) })}
-                    placeholder="Benefício 1&#10;Benefício 2&#10;Benefício 3"
-                    className="min-h-[80px]"
-                  />
-                </div>
-              )}
-
-              {c.variant === 'offer' && (
-                <div className="grid grid-cols-3 gap-3 rounded-xl border border-line bg-slate-50 p-3">
-                  <div>
-                    <Label htmlFor="ed-pl">Rótulo</Label>
-                    <Input id="ed-pl" value={c.price?.label ?? 'A partir de'} onChange={(e) => set({ price: { ...c.price, label: e.target.value, value: c.price?.value ?? '0' } })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="ed-pv">Valor (R$)</Label>
-                    <Input id="ed-pv" value={c.price?.value ?? '89'} onChange={(e) => set({ price: { ...c.price, value: e.target.value, label: c.price?.label ?? 'R$' } })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="ed-pc">Centavos</Label>
-                    <Input id="ed-pc" value={c.price?.cents ?? '90'} onChange={(e) => set({ price: { ...c.price, cents: e.target.value, label: c.price?.label ?? 'R$', value: c.price?.value ?? '0' } })} />
-                  </div>
-                </div>
-              )}
-
-              {c.variant === 'quote' && (
-                <div className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3">
-                  <div>
-                    <Label htmlFor="ed-qt">Depoimento</Label>
-                    <Textarea id="ed-qt" value={c.quote?.text ?? ''} onChange={(e) => set({ quote: { ...c.quote, text: e.target.value, author: c.quote?.author ?? 'Cliente' } })} />
-                  </div>
-                  <div>
-                    <Label htmlFor="ed-qa">Autor do Depoimento</Label>
-                    <Input id="ed-qa" value={c.quote?.author ?? ''} onChange={(e) => set({ quote: { ...c.quote, author: e.target.value, text: c.quote?.text ?? '' } })} />
-                  </div>
-                </div>
-              )}
-
-              {c.variant === 'poll' && (
-                <div className="grid grid-cols-2 gap-3 rounded-xl border border-line bg-slate-50 p-3">
-                  {(c.poll || ['Sim', 'Não']).map((o, i) => (
-                    <div key={i}>
-                      <Label htmlFor={`ed-poll-${i}`}>Opção {i + 1}</Label>
-                      <Input
-                        id={`ed-poll-${i}`}
-                        value={o}
-                        onChange={(e) => {
-                          const nextPoll = [...(c.poll || ['Sim', 'Não'])]
-                          nextPoll[i] = e.target.value
-                          set({ poll: nextPoll })
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div>
-                <Label htmlFor="ed-cta">Chamada para Ação (CTA do botão)</Label>
-                <Input id="ed-cta" value={c.cta} onChange={(e) => set({ cta: e.target.value })} placeholder="Ex: Agende seu horário, Saiba mais" />
-              </div>
+          <div>
+            <Field label="Título principal">
+              <Textarea value={c.headline} onChange={(e) => set({ headline: e.target.value }, 'headline')} className="min-h-[72px]" />
+            </Field>
+            <Limit value={c.headline.length} max={headMax} />
+          </div>
+          <div>
+            <Field label="Palavra de destaque" hint="Precisa aparecer no título; recebe a tipografia especial." error={highlightMissing ? 'Este trecho não aparece no título.' : undefined}>
+              <Input value={c.highlight ?? ''} onChange={(e) => set({ highlight: e.target.value }, 'highlight')} />
+            </Field>
+            <Limit value={(c.highlight ?? '').length} max={L.highlightChars} />
+          </div>
+          <div>
+            <Field label="Subtítulo / apoio">
+              <Input value={c.sub ?? ''} onChange={(e) => set({ sub: e.target.value }, 'sub')} />
+            </Field>
+            <Limit value={(c.sub ?? '').length} max={L.subChars} />
+          </div>
+          {(c.variant === 'list' || c.bullets) && (
+            <div>
+              <Field label="Itens da lista" hint="Um item por linha.">
+                <Textarea value={(c.bullets ?? []).join('\n')} onChange={(e) => set({ bullets: e.target.value.split('\n') }, 'bullets')} className="min-h-[88px]" />
+              </Field>
+              {(c.bullets ?? []).some((b) => b.length > L.bulletChars) && <p className="mt-1 text-xs font-semibold text-danger">Algum item passa de {L.bulletChars} caracteres.</p>}
             </div>
           )}
-
-          {tab === 'visual' && (
-            <div className="grid gap-6">
-              <div>
-                <Label>Estilo Visual (Layout)</Label>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                  {STYLES.map((s) => {
-                    const on = (c.style ?? look.style) === s.id
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => set({ style: s.id })}
-                        className={cx(
-                          'overflow-hidden rounded-xl border text-left text-xs font-semibold transition',
-                          on ? 'border-brand-500 ring-2 ring-brand-200' : 'border-line hover:border-slate-300',
-                        )}
-                      >
-                        <img src={photoUrl(s.photo)} alt="" className="aspect-square w-full object-cover" />
-                        <div className="px-2 py-1.5">{s.label}</div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <Label>Paleta de Cores</Label>
-                <div className="flex flex-wrap gap-2">
-                  {palettes.map(({ label, p }) => {
-                    const on = JSON.stringify(p) === JSON.stringify(activePalette)
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => set({ palette: p })}
-                        className={cx(
-                          'flex items-center gap-2 rounded-xl border px-2.5 py-2 text-xs font-semibold transition',
-                          on ? 'border-brand-500 bg-brand-50 text-brand-900' : 'border-line hover:border-slate-300',
-                        )}
-                      >
-                        <span className="flex">
-                          {[p.dark, p.mid, p.soft, p.light].map((x) => (
-                            <i key={x} className="-ml-1 size-5 rounded-full border-2 border-white first:ml-0" style={{ background: x }} />
-                          ))}
-                        </span>
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Gerador de Imagem sob demanda com IA */}
-              <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-brand-900">
-                    <Sparkles className="size-4 text-brand-600" /> Estúdio Visual IA — Gerar Imagem Exclusiva
-                  </span>
-                  <div className="flex gap-1">
-                    {(
-                      [
-                        ['fotos', 'Foto Real'],
-                        ['ilustracoes', 'Ilustração'],
-                        ['render', 'Render 3D'],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setImgType(id)}
-                        className={cx(
-                          'rounded-md px-2 py-0.5 text-[11px] font-semibold transition',
-                          imgType === id ? 'bg-brand-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-100',
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  Descreva a cena que deseja ou deixe em branco para gerar com base no título do post:
-                </p>
-                <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    id="ai-img-prompt"
-                    value={imgPrompt}
-                    onChange={(e) => setImgPrompt(e.target.value)}
-                    placeholder={`Ex: ${c.headline.slice(0, 45)}...`}
-                    className="flex-1 bg-white"
-                  />
-                  <Button size="sm" loading={generatingImg} onClick={handleGenerateAIImage}>
-                    <Wand2 className="size-3.5" /> Gerar Imagem IA
-                  </Button>
-                </div>
-              </div>
-
-              {/* Foto 1 */}
-              <div>
-                <Label hint={c.variant === 'beforeafter' ? '(Foto "Antes")' : ''}>Catálogo Rápido & Upload</Label>
-                <div className="grid grid-cols-5 gap-2 sm:grid-cols-7">
-                  <label
-                    className="grid aspect-square cursor-pointer place-items-center rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700"
-                    title="Enviar foto do seu dispositivo"
-                  >
-                    <ImagePlus className="size-5" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) set({ photo: await readFile(f) })
+          {c.variant === 'offer' && (
+            <fieldset className="grid grid-cols-3 gap-3 rounded-xl border border-line bg-slate-50 p-3">
+              <legend className="sr-only">Preço</legend>
+              <Field label="Rótulo">
+                <Input value={c.price?.label ?? 'A partir de'} onChange={(e) => set({ price: { ...c.price, label: e.target.value, value: c.price?.value ?? '0' } }, 'pl')} />
+              </Field>
+              <Field label="Valor (R$)">
+                <Input inputMode="numeric" value={c.price?.value ?? '89'} onChange={(e) => set({ price: { ...c.price, value: e.target.value, label: c.price?.label ?? 'R$' } }, 'pv')} />
+              </Field>
+              <Field label="Centavos">
+                <Input inputMode="numeric" value={c.price?.cents ?? '90'} onChange={(e) => set({ price: { ...c.price, cents: e.target.value, label: c.price?.label ?? 'R$', value: c.price?.value ?? '0' } }, 'pc')} />
+              </Field>
+            </fieldset>
+          )}
+          {c.variant === 'quote' && (
+            <div className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3">
+              <Field label="Depoimento">
+                <Textarea value={c.quote?.text ?? ''} onChange={(e) => set({ quote: { ...c.quote, text: e.target.value, author: c.quote?.author ?? 'Cliente' } }, 'qt')} />
+              </Field>
+              <Field label="Autor do depoimento">
+                <Input value={c.quote?.author ?? ''} onChange={(e) => set({ quote: { ...c.quote, author: e.target.value, text: c.quote?.text ?? '' } }, 'qa')} />
+              </Field>
+            </div>
+          )}
+          {c.variant === 'poll' && (
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-line bg-slate-50 p-3">
+              {(c.poll || ['Sim', 'Não']).map((o, i) => (
+                <div key={i}>
+                  <Field label={`Opção ${i + 1}`}>
+                    <Input
+                      value={o}
+                      onChange={(e) => {
+                        const next = [...(c.poll || ['Sim', 'Não'])]
+                        next[i] = e.target.value
+                        set({ poll: next }, `poll${i}`)
                       }}
                     />
-                  </label>
-                  {c.photo?.startsWith('data:') && (
-                    <img src={c.photo} alt="" className="aspect-square rounded-lg object-cover ring-2 ring-brand-500" />
-                  )}
-                  {photoIds.map((id) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => set({ photo: id })}
-                      className={cx(
-                        'overflow-hidden rounded-lg transition',
-                        c.photo === id ? 'ring-2 ring-brand-500 ring-offset-1' : 'opacity-90 hover:opacity-100',
-                      )}
-                    >
-                      <img src={photoUrl(id)} alt="" className="aspect-square w-full object-cover" />
-                    </button>
-                  ))}
+                  </Field>
+                  <Limit value={o.length} max={L.pollChars} />
                 </div>
-              </div>
-
-              {/* Foto 2 para Antes e Depois */}
-              {c.variant === 'beforeafter' && (
-                <div>
-                  <Label hint='(Foto "Depois")'>Segunda Imagem</Label>
-                  <div className="grid grid-cols-5 gap-2 sm:grid-cols-7">
-                    <label
-                      className="grid aspect-square cursor-pointer place-items-center rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-700"
-                      title="Enviar segunda foto"
-                    >
-                      <ImagePlus className="size-5" />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={async (e) => {
-                          const f = e.target.files?.[0]
-                          if (f) set({ photo2: await readFile(f) })
-                        }}
-                      />
-                    </label>
-                    {c.photo2?.startsWith('data:') && (
-                      <img src={c.photo2} alt="" className="aspect-square rounded-lg object-cover ring-2 ring-brand-500" />
-                    )}
-                    {photoIds.map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => set({ photo2: id })}
-                        className={cx(
-                          'overflow-hidden rounded-lg transition',
-                          c.photo2 === id ? 'ring-2 ring-brand-500 ring-offset-1' : 'opacity-90 hover:opacity-100',
-                        )}
-                      >
-                        <img src={photoUrl(id)} alt="" className="aspect-square w-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(c.style || c.palette) && (
-                <button
-                  type="button"
-                  onClick={() => set({ style: undefined, palette: undefined })}
-                  className="inline-flex w-fit items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-ink"
-                >
-                  <RotateCcw className="size-3.5" /> Restaurar visual original da geração
-                </button>
-              )}
+              ))}
             </div>
           )}
-
-          {tab === 'legenda' && (
-            <div className="grid gap-4">
-              <div>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="ed-cap">Legenda para o Instagram</Label>
-                  <span className="text-xs text-slate-400 tabular-nums">{c.caption.length}/2200</span>
-                </div>
-                <Textarea
-                  id="ed-cap"
-                  value={c.caption}
-                  max={2200}
-                  onChange={(e) => set({ caption: e.target.value })}
-                  className="min-h-[220px]"
-                />
-              </div>
-              <div>
-                <Label htmlFor="ed-tags" hint="(separadas por espaço)">Hashtags Estratégicas</Label>
-                <Input
-                  id="ed-tags"
-                  value={c.hashtags.join(' ')}
-                  onChange={(e) => set({ hashtags: e.target.value.split(/\s+/).filter(Boolean) })}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="mt-8 flex flex-wrap justify-end gap-2 border-t border-line pt-5">
-            <Button variant="secondary" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => exportCreatives([jobFor(c, look, c.order - 1, c.headline)])}
-            >
-              <Download className="size-4" /> Baixar PNG
-            </Button>
-            <Button
-              onClick={() => {
-                onSave(c)
-                track('edit', { brandName: brand.name })
-                toast('Alterações salvas com sucesso!')
-                onClose()
-              }}
-            >
-              <Save className="size-4" /> Salvar alterações
-            </Button>
+          <div>
+            <Field label="Chamada para ação (botão)">
+              <Input value={c.cta} onChange={(e) => set({ cta: e.target.value }, 'cta')} placeholder="Ex.: Agende seu horário" />
+            </Field>
+            <Limit value={c.cta.length} max={L.ctaChars} />
           </div>
+        </fieldset>
+      </div>
+    ),
+    layout: (
+      <div className="grid gap-6">
+        <ChoiceGroup
+          legend="Modelo da arte"
+          variant="chip"
+          value={c.variant ?? 'photo'}
+          onChange={(v) => changeVariant(v)}
+          options={VARIANTS.map((v) => ({ value: v.id, label: v.label, icon: <v.icon className="size-4 text-slate-600" aria-hidden /> }))}
+        />
+        <ChoiceGroup
+          legend="Estilo visual"
+          variant="media"
+          className="grid grid-cols-3 gap-2 xl:grid-cols-6"
+          value={c.style ?? look.style}
+          onChange={(v) => set({ style: v })}
+          options={STYLES.map((s) => ({ value: s.id, label: s.label, media: <img src={photoUrl(s.photo)} alt="" loading="lazy" width={120} height={120} className="aspect-square w-full object-cover" /> }))}
+        />
+      </div>
+    ),
+    cores: (
+      <ChoiceGroup
+        legend="Paleta de cores"
+        variant="card"
+        className="grid grid-cols-2 gap-2"
+        value={paletteKey}
+        onChange={(label) => set({ palette: palettes.find((x) => x.label === label)!.p })}
+        options={palettes.map(({ label, p }) => ({
+          value: label,
+          label,
+          icon: (
+            <span className="flex shrink-0" aria-hidden>
+              {[p.dark, p.mid, p.soft, p.light].map((x, k) => (
+                <i key={k} className="-ml-1.5 size-6 rounded-full border-2 border-white first:ml-0" style={{ background: x }} />
+              ))}
+            </span>
+          ),
+        }))}
+      />
+    ),
+    imagem: (
+      <div className="grid gap-6">
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-4">
+          <h3 className="flex items-center gap-1.5 text-sm font-bold text-brand-900">
+            <Sparkles className="size-4 text-brand-700" aria-hidden /> Gerar imagem exclusiva com IA
+          </h3>
+          <div className="mt-3">
+            <ChoiceGroup
+              legend="Tipo de imagem"
+              legendHidden
+              variant="segmented"
+              value={imgType}
+              onChange={setImgType}
+              options={[
+                { value: 'fotos', label: 'Foto' },
+                { value: 'ilustracoes', label: 'Ilustração' },
+                { value: 'render', label: '3D' },
+              ]}
+            />
+          </div>
+          <Field label="Descreva a cena" hint="Opcional. Em branco, a IA usa o título do post." className="mt-3">
+            <Input value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)} placeholder={`Ex.: ${c.headline.slice(0, 40)}…`} disabled={!!generatingImg} />
+          </Field>
+          <Button className="mt-3 w-full sm:w-auto" variant={generatingImg ? 'secondary' : 'primary'} onClick={handleGenerateAIImage}>
+            {generatingImg ? (
+              <>
+                <X className="size-4" aria-hidden /> Cancelar geração
+              </>
+            ) : (
+              <>
+                <Wand2 className="size-4" aria-hidden /> Gerar imagem
+              </>
+            )}
+          </Button>
+        </div>
+        {photoPicker('photo', c.variant === 'beforeafter' ? 'Foto “antes”' : 'Catálogo e upload')}
+        {c.variant === 'beforeafter' && photoPicker('photo2', 'Foto “depois”')}
+        {(c.style || c.palette) && (
+          <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => set({ style: undefined, palette: undefined })}>
+            <RotateCcw className="size-4" aria-hidden /> Voltar ao visual da geração
+          </Button>
+        )}
+      </div>
+    ),
+    legenda: (
+      <div className="grid gap-4">
+        <div>
+          <Field label="Legenda para o Instagram">
+            <Textarea value={c.caption} onChange={(e) => set({ caption: e.target.value }, 'caption')} className="min-h-[220px]" />
+          </Field>
+          <Limit value={c.caption.length} max={L.captionMax} min={c.kind === 'post' ? L.captionMin : undefined} />
+        </div>
+        <div>
+          <Field label="Hashtags" hint="Separadas por espaço.">
+            <Input value={c.hashtags.join(' ')} onChange={(e) => set({ hashtags: e.target.value.split(/\s+/).filter(Boolean) }, 'tags')} autoCapitalize="none" spellCheck={false} />
+          </Field>
+          <Limit value={c.hashtags.length} max={L.hashtagsMax} min={L.hashtagsMin} unit="hashtags" />
         </div>
       </div>
-    </Modal>
+    ),
+  }
+
+  const title = c.kind === 'story' ? `Editar story ${c.order}` : `Editar post ${c.order}`
+  const canvas = (
+    <div className="relative mx-auto h-full w-full" style={{ maxWidth: desktop ? 420 : undefined }}>
+      <div className={cx('mx-auto overflow-hidden rounded-2xl shadow-card', !desktop && 'h-full w-auto')} style={!desktop ? { aspectRatio: c.kind === 'story' ? '9/16' : look.format === '1:1' ? '1/1' : '4/5', maxWidth: '100%' } : undefined}>
+        <Creative c={c} style={c.style ?? look.style} palette={c.palette ?? look.palette} format={look.format} brand={look.brand} chrome={false} />
+      </div>
+      {generatingImg && (
+        <div role="status" className="absolute inset-0 grid place-items-center rounded-2xl bg-ink/50 text-sm font-semibold text-white">
+          <span className="flex items-center gap-2">
+            <Loader2 className="size-5 animate-spin motion-reduce:animate-none" aria-hidden /> Gerando imagem…
+          </span>
+        </div>
+      )}
+    </div>
+  )
+  const historyBtns = (
+    <div className="flex items-center gap-1">
+      <IconButton label="Desfazer (Ctrl+Z)" onClick={h.undo} disabled={!h.canUndo}>
+        <Undo2 className="size-5" aria-hidden />
+      </IconButton>
+      <IconButton label="Refazer (Ctrl+Shift+Z)" onClick={h.redo} disabled={!h.canRedo}>
+        <Redo2 className="size-5" aria-hidden />
+      </IconButton>
+      <IconButton label="Restaurar original" onClick={() => creative && h.commit(creative)} disabled={!dirty}>
+        <RotateCcw className="size-5" aria-hidden />
+      </IconButton>
+    </div>
+  )
+  const toolTabs = (
+    <div role="tablist" aria-label="Ferramentas" className={cx('flex', desktop ? 'gap-1 rounded-xl bg-slate-100 p-1' : 'justify-around border-t border-line bg-white pb-[var(--safe-bottom)]')}>
+      {TOOLS.map((t) => {
+        const on = tool === t.id
+        return (
+          <button
+            key={t.id}
+            id={`ed-tab-${t.id}`}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            aria-controls="ed-panel"
+            tabIndex={on ? 0 : -1}
+            onClick={() => {
+              setTool(t.id)
+              if (!desktop) setExpanded(true)
+            }}
+            onKeyDown={(e) => {
+              const i = TOOLS.findIndex((x) => x.id === tool)
+              const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : null
+              if (n === null) return
+              e.preventDefault()
+              const nt = TOOLS[(n + TOOLS.length) % TOOLS.length]
+              setTool(nt.id)
+              document.getElementById(`ed-tab-${nt.id}`)?.focus()
+            }}
+            className={cx(
+              'flex items-center justify-center text-sm font-semibold transition',
+              desktop ? cx('min-h-10 flex-1 gap-2 rounded-lg', on ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600 hover:text-ink') : cx('min-h-14 flex-1 flex-col gap-0.5 text-xs', on ? 'text-brand-800' : 'text-slate-600'),
+            )}
+          >
+            <t.icon className={cx('size-5', !desktop && on && 'rounded-full')} aria-hidden />
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+  const panel = (
+    <div id="ed-panel" role="tabpanel" aria-labelledby={`ed-tab-${tool}`} tabIndex={0} className="outline-none">
+      {panels[tool]}
+    </div>
+  )
+
+  return (
+    <>
+      <Dialog open={open} onClose={requestClose} label={title} size="full" mobile="fullscreen" bare bodyClassName="flex flex-col overflow-hidden">
+        <div
+          className="flex h-full min-h-0 flex-col"
+          onKeyDown={(e) => {
+            const mod = e.ctrlKey || e.metaKey
+            if (!mod) return
+            const k = e.key.toLowerCase()
+            if (k === 's') (e.preventDefault(), save())
+            else if (k === 'z' && !e.shiftKey) (e.preventDefault(), h.undo())
+            else if ((k === 'z' && e.shiftKey) || k === 'y') (e.preventDefault(), h.redo())
+          }}
+        >
+          {/* header: Cancelar · title · Salvar */}
+          <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 pt-[max(0.25rem,var(--safe-top))] pb-1 md:px-4 md:py-2.5">
+            <Button variant="ghost" onClick={requestClose} className="px-3">
+              Cancelar
+            </Button>
+            <h2 className="min-w-0 flex-1 truncate text-center text-base font-bold md:text-left md:text-title-sm">
+              {title}
+              {dirty && <span className="sr-only"> (alterações não salvas)</span>}
+              {dirty && <span className="ml-2 inline-block size-2 rounded-full bg-warning align-middle" aria-hidden />}
+            </h2>
+            {desktop && historyBtns}
+            {desktop && (
+              <Button variant="secondary" onClick={() => exportCreatives([jobFor(c, look, c.order - 1, c.headline)])}>
+                <Download className="size-4" aria-hidden /> Baixar PNG
+              </Button>
+            )}
+            <Button onClick={save} className="px-4" aria-keyshortcuts="Control+S">
+              <Save className="size-4" aria-hidden /> Salvar
+            </Button>
+          </div>
+
+          {desktop ? (
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,420px)_1fr] gap-8 overflow-hidden p-6">
+              <div className="overflow-y-auto scroll-thin">
+                {canvas}
+                <p className="mt-3 text-center text-xs text-fg-subtle">Ctrl+S salva · Ctrl+Z desfaz · Esc fecha</p>
+              </div>
+              <div className="flex min-h-0 flex-col gap-4">
+                {toolTabs}
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-6 scroll-thin">{panel}</div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className={cx('shrink-0 bg-slate-100 px-4 py-3 transition-[height] duration-300', expanded ? 'h-[26dvh]' : 'h-[50dvh]')}>{canvas}</div>
+              <div className="flex min-h-0 flex-1 flex-col rounded-t-2xl bg-white shadow-[0_-8px_24px_-12px_rgb(11_26_36/0.25)]">
+                <div className="flex shrink-0 items-center gap-1 px-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(!expanded)}
+                    aria-expanded={expanded}
+                    className="flex min-h-11 flex-1 items-center gap-2 px-2 text-sm font-semibold text-slate-700"
+                  >
+                    <ChevronUp className={cx('size-5 transition', expanded && 'rotate-180')} aria-hidden />
+                    {expanded ? 'Ver arte maior' : 'Expandir painel'}
+                  </button>
+                  {historyBtns}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 scroll-thin">{panel}</div>
+                {toolTabs}
+              </div>
+            </>
+          )}
+        </div>
+      </Dialog>
+      <ConfirmDialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        onConfirm={() => {
+          setConfirmClose(false)
+          onClose()
+        }}
+        title="Descartar alterações?"
+        confirmLabel="Descartar"
+        danger
+      >
+        Você editou este criativo e ainda não salvou. Se sair agora, as mudanças serão perdidas.
+      </ConfirmDialog>
+    </>
   )
 }

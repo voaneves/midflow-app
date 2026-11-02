@@ -1,11 +1,11 @@
 import { CalendarDays, Copy, Download, FolderOpen, PenSquare, Search, Share2, Trash2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Creative } from '../../components/creative/Creative'
+import { CreativeViewer } from '../../components/creative/CreativeViewer'
 import { Editor } from '../../components/creative/Editor'
 import { CreativeTile, exportCreatives, jobFor, useLook } from '../../components/creative/parts'
 import { SocialPublishModal } from '../../components/creative/SocialPublishModal'
-import { Button, Empty, Input, Modal, Tabs, toast } from '../../components/ui'
+import { ActionBar, Button, ChoiceGroup, EmptyState, IconButton, Input, toast } from '../../components/ui'
 import { copyText } from '../../lib/export'
 import { useApp } from '../../lib/store'
 import type { LibraryItem } from '../../lib/types'
@@ -20,17 +20,15 @@ export function Library() {
   const [kind, setKind] = useState<'all' | 'post' | 'story'>('all')
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<Set<string>>(new Set())
-  const [view, setView] = useState<LibraryItem | null>(null)
+  const [selecting, setSelecting] = useState(false)
+  const [viewIndex, setViewIndex] = useState<number | null>(null)
   const [edit, setEdit] = useState<LibraryItem | null>(null)
-  const [confirm, setConfirm] = useState<string[] | null>(null)
   const [publishItem, setPublishItem] = useState<LibraryItem | null>(null)
 
   const items = useMemo(
     () =>
       library.filter(
-        (l) =>
-          (kind === 'all' || l.creative.kind === kind) &&
-          (!q || `${l.creative.headline} ${l.themeLabel} ${l.creative.caption}`.toLowerCase().includes(q.toLowerCase())),
+        (l) => (kind === 'all' || l.creative.kind === kind) && (!q || `${l.creative.headline} ${l.themeLabel} ${l.creative.caption}`.toLowerCase().includes(q.toLowerCase())),
       ),
     [library, kind, q],
   )
@@ -41,175 +39,173 @@ export function Library() {
       const n = new Set(s)
       if (n.has(id)) n.delete(id)
       else n.add(id)
+      if (n.size) setSelecting(true)
       return n
     })
+  const exitSelection = () => {
+    setSelecting(false)
+    setSel(new Set())
+  }
   const selected = library.filter((l) => sel.has(l.id))
+  const schedule = (l: LibraryItem) => {
+    scheduleCreative({ date: new Date().toISOString().slice(0, 10), time: '18:30', creative: l.creative, style: l.style, palette: l.palette, format: l.postFormat, themeLabel: l.themeLabel })
+    toast('Adicionado ao Calendário de hoje, às 18:30', 'ok', { action: { label: 'Abrir', onClick: () => nav('/app/calendario') } })
+  }
+  /** Remove with an undo toast instead of a blocking confirmation. */
+  const removeWithUndo = (ids: string[]) => {
+    const before = useApp.getState().library
+    remove(ids)
+    exitSelection()
+    setViewIndex(null)
+    toast(ids.length === 1 ? 'Criativo removido da biblioteca' : `${ids.length} criativos removidos`, 'ok', {
+      action: { label: 'Desfazer', onClick: () => useApp.setState({ library: before }) },
+    })
+  }
 
   if (!library.length)
     return (
       <div className="mx-auto max-w-3xl">
-        <Empty
+        <EmptyState
           icon={<FolderOpen className="size-6" />}
           title="Sua biblioteca está vazia"
           text="Salve posts e Stories na etapa Gerar para encontrá-los aqui, prontos para baixar."
           action={
             <Button onClick={() => nav('/app/criar/1')}>
-              <PenSquare className="size-4" /> Criar conteúdo
+              <PenSquare className="size-4" aria-hidden /> Criar conteúdo
             </Button>
           }
         />
       </div>
     )
 
+  const viewing = viewIndex !== null ? items[viewIndex] : null
+
   return (
     <div className="mx-auto max-w-[1400px]">
-      <div className="flex flex-wrap items-center gap-3">
-        <Tabs
+      <h2 className="sr-only">Criativos salvos</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <ChoiceGroup
+          legend="Filtrar por formato"
+          legendHidden
+          variant="segmented"
+          className="sm:w-80"
           value={kind}
           onChange={setKind}
-          className="w-full bg-white ring-1 ring-line sm:w-auto"
-          items={[
-            { id: 'all', label: `Todos (${library.length})` },
-            { id: 'post', label: 'Posts' },
-            { id: 'story', label: 'Stories' },
+          options={[
+            { value: 'all', label: `Todos (${library.length})` },
+            { value: 'post', label: 'Posts' },
+            { value: 'story', label: 'Stories' },
           ]}
         />
-        <div className="w-full sm:ml-auto sm:w-72">
-          <Input id="lib-search" icon={<Search className="size-4" />} placeholder="Buscar por tema ou texto" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="sm:ml-auto sm:w-72">
+          <Input type="search" icon={<Search className="size-4" />} placeholder="Buscar por tema ou texto" aria-label="Buscar na biblioteca" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        <Button variant={selecting ? 'dark' : 'secondary'} onClick={() => (selecting ? exitSelection() : setSelecting(true))} aria-pressed={selecting}>
+          {selecting ? 'Concluir' : 'Selecionar'}
+        </Button>
       </div>
+      <p className="sr-only" aria-live="polite">
+        {items.length} {items.length === 1 ? 'criativo' : 'criativos'}
+      </p>
 
-      {selected.length > 0 && (
-        <div className="sticky top-[84px] z-10 mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm text-white shadow-pop animate-rise">
-          <span className="mr-auto font-semibold">{selected.length} selecionado(s)</span>
-          <Button size="sm" variant="secondary" onClick={() => download(selected)}>
-            <Download className="size-4" /> Baixar
+      {selecting && (
+        <div className="sticky top-[calc(var(--header-offset)+8px)] z-10 mt-4 hidden items-center gap-2 rounded-xl bg-ink px-4 py-2.5 text-sm text-white shadow-pop lg:flex" role="region" aria-label="Seleção">
+          <span className="mr-auto font-semibold" aria-live="polite">
+            {selected.length} {selected.length === 1 ? 'selecionado' : 'selecionados'}
+          </span>
+          <Button size="sm" variant="glass" onClick={() => download(selected)} disabled={!selected.length}>
+            <Download className="size-4" aria-hidden /> Baixar
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setConfirm(selected.map((s) => s.id))}>
-            <Trash2 className="size-4" /> Remover
+          <Button size="sm" variant="glass" onClick={() => removeWithUndo(selected.map((s) => s.id))} disabled={!selected.length}>
+            <Trash2 className="size-4" aria-hidden /> Remover
           </Button>
-          <button onClick={() => setSel(new Set())} className="grid size-8 place-items-center rounded-lg hover:bg-white/10" aria-label="Limpar seleção">
-            <X className="size-4" />
-          </button>
+          <IconButton size="sm" variant="glass" label="Sair da seleção" onClick={exitSelection}>
+            <X className="size-4" aria-hidden />
+          </IconButton>
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 items-start gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+      <ul className="mt-5 grid grid-cols-2 items-start gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 2xl:grid-cols-6">
         {items.map((l, i) => (
-          <div key={l.id} className="min-w-0">
+          <li key={l.id} className="min-w-0">
             <CreativeTile
               c={l.creative}
               index={i}
               look={lookOf(l)}
+              selecting={selecting}
               selected={sel.has(l.id)}
               onSelect={() => toggle(l.id)}
-              onOpen={() => setView(l)}
+              onOpen={() => setViewIndex(i)}
               onEdit={() => setEdit(l)}
               onDownload={() => download([l])}
               compact
               menu={[
-                {
-                  label: 'Publicar / Assistente',
-                  icon: <Share2 className="size-4 text-brand-600" />,
-                  onClick: () => setPublishItem(l),
-                },
-                {
-                  label: 'Agendar no Calendário',
-                  icon: <CalendarDays className="size-4 text-brand-600" />,
-                  onClick: () => {
-                    scheduleCreative({
-                      date: new Date().toISOString().slice(0, 10),
-                      time: '18:30',
-                      creative: l.creative,
-                      style: l.style,
-                      palette: l.palette,
-                      format: l.postFormat,
-                      themeLabel: l.themeLabel,
-                    })
-                    toast('Criativo adicionado ao Calendário!')
-                    nav('/app/calendario')
-                  },
-                },
-                {
-                  label: 'Copiar legenda',
-                  icon: <Copy className="size-4" />,
-                  onClick: async () => (await copyText(`${l.creative.caption}\n\n${l.creative.hashtags.join(' ')}`)) && toast('Legenda copiada'),
-                },
-                { label: 'Remover', icon: <Trash2 className="size-4" />, onClick: () => setConfirm([l.id]), danger: true },
+                { label: 'Publicar', icon: <Share2 className="size-4 text-brand-700" />, onClick: () => setPublishItem(l) },
+                { label: 'Agendar no Calendário', icon: <CalendarDays className="size-4 text-brand-700" />, onClick: () => schedule(l) },
+                { label: 'Copiar legenda', icon: <Copy className="size-4" />, onClick: async () => void ((await copyText(`${l.creative.caption}\n\n${l.creative.hashtags.join(' ')}`)) && toast('Legenda copiada')) },
+                { label: 'Remover', icon: <Trash2 className="size-4" />, onClick: () => removeWithUndo([l.id]), danger: true },
               ]}
             />
-            <div className="mt-1.5 truncate text-xs text-slate-500">
+            <p className="mt-1.5 truncate text-xs text-fg-subtle">
               {l.themeLabel} · {new Date(l.savedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-            </div>
-          </div>
+            </p>
+          </li>
         ))}
-      </div>
-      {!items.length && <p className="mt-10 text-center text-sm text-slate-500">Nada encontrado para esse filtro.</p>}
+      </ul>
+      {!items.length && <p className="mt-10 text-center text-sm text-fg-subtle">Nada encontrado para esse filtro.</p>}
 
-      <Modal open={!!view} onClose={() => setView(null)} wide title={view?.themeLabel}>
-        {view && (
-          <div className="grid gap-6 p-6 md:grid-cols-[minmax(0,360px)_1fr]">
-            <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-2xl shadow-card">
-              <Creative c={view.creative} style={view.style} palette={view.palette} format={view.postFormat} brand={brand} chrome={false} />
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-sm font-bold">Legenda</h4>
-              <p className="mt-2 rounded-xl bg-slate-50 p-4 text-sm leading-relaxed whitespace-pre-line text-slate-700">{view.creative.caption}</p>
-              <p className="mt-3 text-sm font-medium text-brand-700">{view.creative.hashtags.join(' ')}</p>
-              <div className="mt-6 flex flex-wrap gap-2">
-                <Button onClick={() => setPublishItem(view)}>
-                  <Share2 className="size-4" /> Publicar agora
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    scheduleCreative({
-                      date: new Date().toISOString().slice(0, 10),
-                      time: '18:30',
-                      creative: view.creative,
-                      style: view.style,
-                      palette: view.palette,
-                      format: view.postFormat,
-                      themeLabel: view.themeLabel,
-                    })
-                    toast('Agendado no Calendário!')
-                    setView(null)
-                    nav('/app/calendario')
-                  }}
-                >
-                  <CalendarDays className="size-4" /> Agendar
-                </Button>
-                <Button variant="secondary" onClick={() => download([view])}>
-                  <Download className="size-4" /> Baixar PNG
-                </Button>
-                <Button variant="secondary" onClick={async () => (await copyText(`${view.creative.caption}\n\n${view.creative.hashtags.join(' ')}`)) && toast('Legenda copiada')}>
-                  <Copy className="size-4" /> Copiar legenda
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {selecting && (
+        <ActionBar className="lg:hidden">
+          <span className="mr-auto text-sm font-semibold" aria-live="polite">
+            {selected.length} {selected.length === 1 ? 'selecionado' : 'selecionados'}
+          </span>
+          <IconButton variant="secondary" label="Remover selecionados" onClick={() => removeWithUndo(selected.map((s) => s.id))} disabled={!selected.length}>
+            <Trash2 className="size-5" aria-hidden />
+          </IconButton>
+          <Button onClick={() => download(selected)} disabled={!selected.length}>
+            <Download className="size-4" aria-hidden /> Baixar
+          </Button>
+        </ActionBar>
+      )}
+
+      {viewing && (
+        <CreativeViewer
+          items={items.map((l) => l.creative)}
+          index={viewIndex}
+          onIndex={setViewIndex}
+          onClose={() => setViewIndex(null)}
+          look={lookOf(viewing)}
+          title={viewing.themeLabel}
+          onEdit={() => {
+            setEdit(viewing)
+            setViewIndex(null)
+          }}
+          onPublish={() => {
+            setPublishItem(viewing)
+            setViewIndex(null)
+          }}
+          extraActions={() => (
+            <>
+              <Button variant="secondary" onClick={() => schedule(viewing)}>
+                <CalendarDays className="size-4" aria-hidden /> Agendar
+              </Button>
+              <Button variant="danger" onClick={() => removeWithUndo([viewing.id])}>
+                <Trash2 className="size-4" aria-hidden /> Remover
+              </Button>
+            </>
+          )}
+        />
+      )}
 
       {publishItem && (
         <SocialPublishModal
-          open={!!publishItem}
+          open
           creative={publishItem.creative}
           look={lookOf(publishItem)}
           onClose={() => setPublishItem(null)}
           onSchedule={() => {
-            scheduleCreative({
-              date: new Date().toISOString().slice(0, 10),
-              time: '18:30',
-              creative: publishItem.creative,
-              style: publishItem.style,
-              palette: publishItem.palette,
-              format: publishItem.postFormat,
-              themeLabel: publishItem.themeLabel,
-            })
+            schedule(publishItem)
             setPublishItem(null)
-            toast('Conteúdo agendado no Calendário!')
-            nav('/app/calendario')
           }}
         />
       )}
@@ -219,32 +215,8 @@ export function Library() {
         creative={edit?.creative ?? null}
         look={edit ? lookOf(edit) : { palette: library[0].palette, style: library[0].style, format: '4:5', brand }}
         onClose={() => setEdit(null)}
-        onSave={(c) => {
-          updateCreative('__library__', c)
-        }}
+        onSave={(c) => updateCreative('__library__', c)}
       />
-
-      <Modal open={!!confirm} onClose={() => setConfirm(null)} title="Remover da biblioteca?">
-        <div className="p-6">
-          <p className="text-sm text-slate-600">{confirm?.length === 1 ? 'Este criativo será removido' : `${confirm?.length} criativos serão removidos`} da biblioteca. As gerações em “Meus posts” continuam disponíveis.</p>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirm(null)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                remove(confirm ?? [])
-                setSel(new Set())
-                setConfirm(null)
-                toast('Removido da biblioteca')
-              }}
-            >
-              <Trash2 className="size-4" /> Remover
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

@@ -11,6 +11,7 @@ export async function rewriteCreativeWithAI(opts: {
   segment?: string
   city?: string
   seed?: number
+  signal?: AbortSignal
 }): Promise<{
   headline: string
   highlight?: string
@@ -20,11 +21,13 @@ export async function rewriteCreativeWithAI(opts: {
   caption: string
   engine?: string
 }> {
+  const { signal, ...body } = opts
   try {
     const res = await fetch(api('/api/rewrite'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(opts),
+      body: JSON.stringify(body),
+      signal,
     })
     if (res.ok) {
       const json = await res.json()
@@ -32,7 +35,8 @@ export async function rewriteCreativeWithAI(opts: {
         return { ...json.data, engine: json.engine }
       }
     }
-  } catch {
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e
     // Fallback local
   }
 
@@ -56,19 +60,22 @@ export async function generateCustomImageWithAI(opts: {
   order?: number
   seed?: number
   palette?: { dark: string; mid: string; light: string; accent: string; soft: string }
+  signal?: AbortSignal
 }): Promise<string | null> {
+  const { signal, ...body } = opts
   try {
     const res = await fetch(api('/api/generate-image'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(opts),
+      body: JSON.stringify(body),
+      signal,
     })
     if (res.ok) {
       const json = await res.json()
       if (json.imageUrl) return json.imageUrl
     }
-  } catch {
-    // Ignore
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e
   }
   return null
 }

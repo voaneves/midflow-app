@@ -135,7 +135,7 @@ function StoriesNarrative() {
             <Creative c={c} style="premium" palette={g.palette} format="4:5" brand={{ name: 'Studio Aurora', handle: 'studioaurora' }} />
           </div>
           <div>
-            <div className="text-[11px] font-bold tracking-[.1em] break-words text-brand-700 uppercase">{labels[i][0]}</div>
+            <div className="text-xs font-bold tracking-[.1em] break-words text-brand-700 uppercase">{labels[i][0]}</div>
             <div className="text-sm text-slate-500">{labels[i][1]}</div>
           </div>
         </Reveal>
@@ -305,7 +305,7 @@ export function Landing() {
           <Link to="/" className="text-[22px]">
             <Logo />
           </Link>
-          <nav className="mx-auto hidden items-center gap-8 text-[15px] font-medium text-slate-700 lg:flex" aria-label="Navegação da página inicial">
+          <nav className="mx-auto hidden items-center gap-8 text-base font-medium text-slate-700 lg:flex" aria-label="Navegação da página inicial">
             {[
               ['Como funciona', 'como'],
               ['Exemplos', 'exemplos'],
@@ -336,7 +336,7 @@ export function Landing() {
               <Button onClick={() => nav('/app')}>Ir para o app</Button>
             ) : (
               <>
-                <Link to="/entrar" className="hidden h-11 items-center px-4 text-[15px] font-medium text-slate-700 hover:text-brand-700 sm:flex">
+                <Link to="/entrar" className="hidden h-11 items-center px-4 text-base font-medium text-slate-700 hover:text-brand-700 sm:flex">
                   Entrar
                 </Link>
                 <Button onClick={() => nav('/cadastro')} className="hidden sm:inline-flex">
@@ -414,7 +414,7 @@ export function Landing() {
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="Digite o nome da sua empresa"
-                  className="h-14 w-full rounded-2xl border border-line bg-white pr-4 pl-12 text-base shadow-card placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 focus:outline-none"
+                  className="h-14 w-full rounded-2xl border border-line bg-white pr-4 pl-12 text-base shadow-card placeholder:text-slate-500 focus:border-brand-500 focus:ring-4 focus:ring-brand-100 focus:outline-none"
                 />
               </label>
               <Button type="submit" size="lg" className="h-14 rounded-2xl px-7 text-base">
@@ -473,7 +473,7 @@ export function Landing() {
                 <Reveal as="li" key={t} delay={i * 110} className="lift relative rounded-2xl border border-line bg-white p-4 sm:p-6">
                   <span className="grid size-10 place-items-center rounded-full bg-brand-700 text-sm font-bold text-white">{i + 1}</span>
                   <h3 className="mt-4 text-base font-bold sm:mt-5 sm:text-lg">{t}</h3>
-                  <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-600 sm:text-[15px]">{d}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-slate-600 sm:text-base">{d}</p>
                 </Reveal>
               ))}
             </ol>
@@ -497,7 +497,7 @@ export function Landing() {
                   'Variações de antes/depois e depoimentos como prova social',
                   'Chamada para ação clara que gera conversas e pedidos',
                 ].map((t) => (
-                  <li key={t} className="flex items-center gap-3 text-[15px]">
+                  <li key={t} className="flex items-center gap-3 text-base">
                     <span className="grid size-6 place-items-center rounded-full bg-brand-100 text-brand-700">
                       <Check className="size-4" strokeWidth={3} />
                     </span>
@@ -562,7 +562,7 @@ export function Landing() {
                   </div>
                   <ul className="mt-6 flex-1 space-y-2.5">
                     {p.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2.5 text-[15px]">
+                      <li key={f} className="flex items-start gap-2.5 text-base">
                         <Check className={cx('mt-0.5 size-4 shrink-0', p.highlight ? 'text-mint' : 'text-brand-600')} strokeWidth={3} />
                         {f}
                       </li>
@@ -610,14 +610,14 @@ export function Landing() {
               ].map(([t, a, s], i) => (
                 <Reveal as="figure" key={a} delay={i * 110} className="lift flex flex-col rounded-2xl border border-line bg-white p-6">
                   <div className="flex gap-0.5 text-amber-400">{'★★★★★'}</div>
-                  <blockquote className="mt-4 flex-1 text-[15px] leading-relaxed text-slate-700">“{t}”</blockquote>
+                  <blockquote className="mt-4 flex-1 text-base leading-relaxed text-slate-700">“{t}”</blockquote>
                   <figcaption className="mt-5 text-sm">
                     <b>{a}</b> · <span className="text-slate-500">{s}</span>
                   </figcaption>
                 </Reveal>
               ))}
             </div>
-            <p className="mt-5 text-center text-xs text-slate-400">
+            <p className="mt-5 text-center text-xs text-slate-500">
               Depoimentos e resultados reais de empreendedores que transformaram sua presença digital com a MIDFLOW.
             </p>
           </div>
@@ -636,11 +636,11 @@ export function Landing() {
                     aria-expanded={faq === i}
                   >
                     {q}
-                    <ChevronDown className={cx('size-5 shrink-0 text-slate-400 transition duration-300', faq === i && 'rotate-180 text-brand-600')} />
+                    <ChevronDown className={cx('size-5 shrink-0 text-slate-500 transition duration-300', faq === i && 'rotate-180 text-brand-600')} />
                   </button>
                   <div className="accordion" data-open={faq === i}>
                     <div>
-                      <p className="-mt-1 px-6 pb-5 text-[15px] leading-relaxed text-slate-600">{a}</p>
+                      <p className="-mt-1 px-6 pb-5 text-base leading-relaxed text-slate-600">{a}</p>
                     </div>
                   </div>
                 </div>
