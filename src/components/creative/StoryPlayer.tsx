@@ -1,9 +1,10 @@
 import { ChevronLeft, ChevronRight, Pause, Play, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Creative as CreativeT } from '../../lib/types'
 import { Dialog, IconButton, useReducedMotion } from '../ui'
-import { Creative, creativeLabel } from './Creative'
-import type { Look } from './parts'
+import { Creative } from './Creative'
+import { creativeLabel } from './canvas'
+import type { Look } from './helpers'
 
 const DURATION = 5000
 
@@ -20,11 +21,14 @@ export function StoryPlayer({ open, onClose, stories, look }: { open: boolean; o
   const hold = useRef<number | undefined>(undefined)
   const swipe = useRef<{ x: number; y: number } | null>(null)
 
-  useEffect(() => {
-    if (!open) return
-    setI(0)
-    setPlaying(!reduced)
-  }, [open, reduced])
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
+    if (open) {
+      setI(0)
+      setPlaying(!reduced)
+    }
+  }
 
   const next = () => (i + 1 < stories.length ? setI(i + 1) : setPlaying(false))
   const prev = () => setI(Math.max(0, i - 1))
@@ -37,9 +41,16 @@ export function StoryPlayer({ open, onClose, stories, look }: { open: boolean; o
       <div
         className="relative mx-auto flex h-full w-full max-w-[min(100%,calc((100dvh-120px)*9/16))] flex-col justify-center px-2 py-3"
         onKeyDown={(e) => {
-          if (e.key === 'ArrowRight') (e.preventDefault(), next())
-          else if (e.key === 'ArrowLeft') (e.preventDefault(), prev())
-          else if (e.key === ' ') (e.preventDefault(), setPlaying((p) => !p))
+          if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            next()
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            prev()
+          } else if (e.key === ' ') {
+            e.preventDefault()
+            setPlaying((p) => !p)
+          }
         }}
       >
         {/* progress segments */}

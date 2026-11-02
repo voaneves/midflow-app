@@ -3,9 +3,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CreativeViewer } from '../../components/creative/CreativeViewer'
 import { LazyEditor as Editor } from '../../components/creative/LazyEditor'
-import { CreativeTile, exportCreatives, jobFor, useLook } from '../../components/creative/parts'
+import { CreativeTile } from '../../components/creative/parts'
+import { exportCreatives, jobFor, useLook } from '../../components/creative/helpers'
 import { SocialPublishModal } from '../../components/creative/SocialPublishModal'
 import { ActionBar, Button, ChoiceGroup, EmptyState, IconButton, Input, toast } from '../../components/ui'
+import { localISODate } from '../../lib/dates'
 import { copyText } from '../../lib/export'
 import { useApp } from '../../lib/store'
 import type { LibraryItem } from '../../lib/types'
@@ -48,7 +50,7 @@ export function Library() {
   }
   const selected = library.filter((l) => sel.has(l.id))
   const schedule = (l: LibraryItem) => {
-    scheduleCreative({ date: new Date().toISOString().slice(0, 10), time: '18:30', creative: l.creative, style: l.style, palette: l.palette, format: l.postFormat, themeLabel: l.themeLabel })
+    scheduleCreative({ date: localISODate(), time: '18:30', creative: l.creative, style: l.style, palette: l.palette, format: l.postFormat, themeLabel: l.themeLabel })
     toast('Adicionado ao Calendário de hoje, às 18:30', 'ok', { action: { label: 'Abrir', onClick: () => nav('/app/calendario') } })
   }
   /** Remove with an undo toast instead of a blocking confirmation. */

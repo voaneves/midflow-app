@@ -603,6 +603,14 @@ export const BRIEFING_OBJECTIVES = [
   'Outros',
 ]
 
+/** Demo brand (Studio Aurora) briefing texts. Treated as example copy, so they follow the segment like the ones below. */
+export const DEMO_BRIEFING_TEXT = {
+  about:
+    'Salão de beleza e estética com foco em tratamentos capilares, hidratação profunda, limpeza de pele e manicure. Atendimento personalizado, produtos profissionais e ambiente acolhedor.',
+  audience: 'Mulheres de 25 a 45 anos, que trabalham fora, valorizam autocuidado e procuram praticidade com resultados comprovados.',
+  topics: 'Dicas de manutenção capilar, limpeza de pele luminosa, transformações antes e depois, e promoções especiais da semana.',
+}
+
 /** "Preencher com dados de exemplo" in the briefing: audience, topics and objectives per segment ("about" is SegmentDef.example). */
 export const SEGMENT_BRIEFING_EXAMPLES: Record<SegmentId, { audience: string; topics: string; objectives: string[] }> = {
   beleza: {
@@ -656,6 +664,7 @@ export const SEGMENT_BRIEFING_EXAMPLES: Record<SegmentId, { audience: string; to
 export function isExampleText(field: 'about' | 'audience' | 'topics', value: string): boolean {
   const v = value.trim()
   if (!v) return false
+  if (DEMO_BRIEFING_TEXT[field] === v) return true
   return SEGMENT_OPTIONS.some((o) => (field === 'about' ? segmentDef(o.id).example : SEGMENT_BRIEFING_EXAMPLES[o.id][field]) === v)
 }
 

@@ -2,8 +2,6 @@ import {
   AlertCircle,
   ArrowRight,
   AtSign,
-  BookOpen,
-  Briefcase,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -12,21 +10,17 @@ import {
   Dog,
   Dumbbell,
   FileText,
-  Gem,
   HeartPulse,
   Home,
   Link2,
   MapPin,
-  Minus,
   MoreHorizontal,
-  PartyPopper,
   Save,
   Scissors,
   Shirt,
   Smile,
   Sparkles,
   Store,
-  Tag,
   UtensilsCrossed,
   Wand2,
   Wrench,
@@ -34,18 +28,18 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../../components/creative/Creative'
-import { ColorSwatches, useLook } from '../../../components/creative/parts'
+import { ColorSwatches } from '../../../components/creative/parts'
+import { useLook } from '../../../components/creative/helpers'
 import { Button, ChoiceGroup, cx, Field, IconButton, InstagramIcon, Input, StoriesIcon, TabPanel, Tabs, Textarea, toast, useIsDesktop } from '../../../components/ui'
 import { derivePalette } from '../../../lib/color'
 import { BRIEFING_OBJECTIVES, isExampleText, SEGMENT_BRIEFING_EXAMPLES, SEGMENT_OPTIONS, segmentDef, STYLES, TONES } from '../../../lib/data'
 import { copyText } from '../../../lib/export'
 import { useApp } from '../../../lib/store'
 import type { Palette, SegmentId, StyleId, ToneId } from '../../../lib/types'
-import { FlowActions, FlowLayout, useExamples } from './shared'
+import { TONE_ICON } from './icons'
+import { FlowActions, FlowLayout } from './shared'
+import { useExamples } from './useExamples'
 
-export const TONE_ICON: Record<string, typeof Smile> = {
-  profissional: Briefcase, descontraido: Smile, inspirador: Sparkles, educativo: BookOpen, vendedor: Tag, divertido: PartyPopper, minimalista: Minus, luxuoso: Gem,
-}
 const SEGMENT_ICON: Record<string, typeof Smile> = {
   beleza: Scissors, alimentacao: UtensilsCrossed, fitness: Dumbbell, saude: HeartPulse, imoveis: Home, pet: Dog, servicos: Wrench, moda: Shirt, outro: MoreHorizontal,
 }

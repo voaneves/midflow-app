@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight, Copy, Download, FolderPlus, Hash, Pencil, Send, ZoomIn, ZoomOut } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { copyText } from '../../lib/export'
 import type { Creative as CreativeT } from '../../lib/types'
 import { Button, Dialog, IconButton, toast, useIsPhone } from '../ui'
-import { Creative, creativeLabel } from './Creative'
-import { exportCreatives, jobFor, type Look } from './parts'
+import { Creative } from './Creative'
+import { creativeLabel } from './canvas'
+import { exportCreatives, jobFor, type Look } from './helpers'
 
 /**
  * Full-screen viewer on phones (dialog on desktop): swipe or ←/→ between creatives, pinch or the zoom
@@ -41,7 +42,11 @@ export function CreativeViewer({
   const pinch = useRef<{ d: number; z: number } | null>(null)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
 
-  useEffect(() => setZoom(1), [index])
+  const [shownIndex, setShownIndex] = useState(index)
+  if (shownIndex !== index) {
+    setShownIndex(index)
+    setZoom(1)
+  }
 
   const go = (d: 1 | -1) => {
     if (index === null) return

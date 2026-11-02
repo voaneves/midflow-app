@@ -33,7 +33,7 @@ import { track } from '../../lib/telemetry'
 import type { Creative as CreativeT, Variant } from '../../lib/types'
 import { Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, IconButton, Input, Select, Textarea, toast, useIsDesktop } from '../ui'
 import { Creative } from './Creative'
-import { exportCreatives, jobFor, readFile, type Look } from './parts'
+import { exportCreatives, jobFor, readFile, type Look } from './helpers'
 
 interface Props {
   open: boolean
@@ -552,9 +552,16 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
             const mod = e.ctrlKey || e.metaKey
             if (!mod) return
             const k = e.key.toLowerCase()
-            if (k === 's') (e.preventDefault(), save())
-            else if (k === 'z' && !e.shiftKey) (e.preventDefault(), h.undo())
-            else if ((k === 'z' && e.shiftKey) || k === 'y') (e.preventDefault(), h.redo())
+            if (k === 's') {
+              e.preventDefault()
+              save()
+            } else if (k === 'z' && !e.shiftKey) {
+              e.preventDefault()
+              h.undo()
+            } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+              e.preventDefault()
+              h.redo()
+            }
           }}
         >
           {/* header: Cancelar · title · Salvar */}

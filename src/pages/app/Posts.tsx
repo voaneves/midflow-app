@@ -2,7 +2,7 @@ import { ArrowRight, Download, FileText, FolderPlus, MoreVertical, PenSquare, Se
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../components/creative/Creative'
-import { exportCreatives, jobFor, useLook } from '../../components/creative/parts'
+import { exportCreatives, jobFor, useLook } from '../../components/creative/helpers'
 import { Button, Card, ChoiceGroup, cx, EmptyState, IconButton, Input, Menu, toast } from '../../components/ui'
 import { OBJECTIVES, STYLES } from '../../lib/data'
 import { useApp } from '../../lib/store'

@@ -5,7 +5,7 @@ import { generateDirectLinks, getSocialTips } from '../../lib/social'
 import { useApp } from '../../lib/store'
 import type { Creative } from '../../lib/types'
 import { Button, cx, Dialog, InstagramIcon, toast } from '../ui'
-import { exportCreatives, jobFor, type Look } from './parts'
+import { exportCreatives, jobFor, type Look } from './helpers'
 
 interface Props {
   open: boolean

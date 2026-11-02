@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR, PHOTOS_DIR } from './paths.ts'
 import { generateAIImage } from './ai/image.ts'
-import { fetchPexelsPhoto } from './pexels.ts'
+import { fetchStockPhoto } from './pixabay.ts'
 
 const CACHE_DIR = path.join(DATA_DIR, 'image-cache')
 
@@ -539,7 +539,7 @@ export interface ResolvedImage {
  * Resolves the image for `GET /api/image`:
  * 1. Memory/disk cache.
  * 2. `forceAi` (every generated card by default, or the editor's "Gerar nova imagem IA"): Cloudflare Workers AI / Gemini.
- * 3. Photos mode (when AI is off, failed or over the limit): Pexels stock photo, then the curated Unsplash catalog.
+ * 3. Photos mode (when AI is off, failed or over the limit): Pixabay stock photo, then the curated Unsplash catalog.
  * 4. Illustrations/render modes, or everything above failed: SVG artwork composed from a local photo.
  * A fallback served in place of a requested AI image is not cached, so the next view retries the AI.
  */
@@ -605,12 +605,12 @@ export async function resolveContextualImage(opts: ImageGenOptions): Promise<Res
   }
   const keep = !opts.forceAi // do not pin a fallback under an AI request
 
-  // 3. Stock photos: Pexels first, then the curated Unsplash catalog
+  // 3. Stock photos: Pixabay first, then the curated Unsplash catalog
   if (effectiveType === 'fotos') {
-    const pexels = await fetchPexelsPhoto({ prompt: opts.prompt, segment: opts.segment, kind: opts.kind, order: opts.order, seed: opts.seed })
-    if (pexels) {
-      if (keep) persist(pexels, true)
-      return { buffer: pexels.buffer, mimeType: pexels.mimeType, source: 'pexels', ai: false, credit: pexels.credit }
+    const stock = await fetchStockPhoto({ prompt: opts.prompt, segment: opts.segment, kind: opts.kind, order: opts.order, seed: opts.seed })
+    if (stock) {
+      if (keep) persist(stock, true)
+      return { buffer: stock.buffer, mimeType: stock.mimeType, source: 'pixabay', ai: false, credit: stock.credit }
     }
   }
   if (effectiveType === 'fotos') {

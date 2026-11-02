@@ -2,14 +2,15 @@ import { ArrowRight, GraduationCap, MoreHorizontal, Plus, RefreshCw, Star, Tag, 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../../components/creative/Creative'
-import { useLook } from '../../../components/creative/parts'
+import { useLook } from '../../../components/creative/helpers'
 import { Button, ChoiceGroup, cx, Field, InstagramIcon, Input, StoriesIcon, TabPanel, Tabs, toast } from '../../../components/ui'
 import { OBJECTIVES, segmentDef, THEME_CATS, type ThemeCat } from '../../../lib/data'
 import { findTheme, themesFor } from '../../../lib/generator'
 import { photoUrl } from '../../../lib/photos'
 import { useApp } from '../../../lib/store'
 import type { ObjectiveId } from '../../../lib/types'
-import { FlowActions, FlowLayout, Panel, SectionTitle, useExamples } from './shared'
+import { FlowActions, FlowLayout, Panel, SectionTitle } from './shared'
+import { useExamples } from './useExamples'
 
 const OBJ_ICON: Record<string, typeof Users> = { users: Users, tag: Tag, graduation: GraduationCap, star: Star, more: MoreHorizontal }
 

@@ -48,10 +48,19 @@ export function Tabs<T extends string>({
       role="tablist"
       aria-label={label}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowRight') (e.preventDefault(), focusTab(cur + 1))
-        else if (e.key === 'ArrowLeft') (e.preventDefault(), focusTab(cur - 1))
-        else if (e.key === 'Home') (e.preventDefault(), focusTab(0))
-        else if (e.key === 'End') (e.preventDefault(), focusTab(items.length - 1))
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          focusTab(cur + 1)
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          focusTab(cur - 1)
+        } else if (e.key === 'Home') {
+          e.preventDefault()
+          focusTab(0)
+        } else if (e.key === 'End') {
+          e.preventDefault()
+          focusTab(items.length - 1)
+        }
       }}
       className={cx(
         'flex',

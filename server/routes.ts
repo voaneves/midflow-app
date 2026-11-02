@@ -123,7 +123,7 @@ function toGeneration(params: GenerateParams, version: number, result: PackResul
       light: params.palette.light,
       fallback,
       editorial,
-      // Every card asks for an AI image; /api/image falls back to Pexels/catalog when AI is off, failing or over the limit.
+      // Every card asks for an AI image; /api/image falls back to Pixabay/catalog when AI is off, failing or over the limit.
       forceAi: config.image.autoGenerate && imageAiEnabled(),
     })
   }
@@ -224,7 +224,7 @@ const routes: Record<string, Handler> = {
       imageProvider: config.image.provider,
       imageModel: imageModelName(),
       imageAuto: config.image.autoGenerate && imageAiEnabled(),
-      stockFallback: config.image.pexelsKey ? 'pexels' : 'catalog',
+      stockFallback: config.image.pixabayKey ? 'pixabay' : 'catalog',
       imageLastError: imageHealth.lastErrorAt && (!imageHealth.lastOkAt || imageHealth.lastErrorAt > imageHealth.lastOkAt) ? imageHealth.lastError : null,
       minQuality: config.ai.minQuality,
       lastOkAt: llmHealth.lastOkAt ?? null,

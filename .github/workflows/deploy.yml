@@ -12,6 +12,7 @@
 #   GEMINI_API_KEY         Google AI Studio key — text
 #   CF_AI_TOKEN            Cloudflare token with "Workers AI" permission — images
 #   ADMIN_TOKEN            any long random string — protects /api/admin/metrics
+#   PIXABAY_API_KEY        optional — stock photo fallback (pixabay.com/api/docs)
 #
 # Without CLOUDFLARE_API_TOKEN the api job is skipped (with a warning) and the site
 # still deploys; it then runs as an offline demo, clearly labeled in the app.
@@ -31,12 +32,16 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+# Runs JavaScript actions that still target Node 20 on Node 24 (Node 20 is deprecated on runners).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -47,7 +52,7 @@ jobs:
 
   api:
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check Cloudflare credentials
         id: cf
@@ -61,9 +66,9 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.cf.outputs.ready == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.cf.outputs.ready == 'true'
         with:
           node-version: 24
@@ -71,25 +76,37 @@ jobs:
       - run: npm ci
         if: steps.cf.outputs.ready == 'true'
 
-      - name: Deploy Worker + secrets
+      - name: Deploy Worker
         if: steps.cf.outputs.ready == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
-          # Names only; values come from env below and are stored encrypted in Cloudflare.
-          secrets: |
-            GEMINI_API_KEY
-            CF_AI_ACCOUNT_ID
-            CF_AI_TOKEN
-            PEXELS_API_KEY
-            ADMIN_TOKEN
+        run: npx wrangler deploy
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Copies the GitHub Secrets into the Worker (stored encrypted in Cloudflare).
+      # Empty ones are skipped with a warning, so an optional key never breaks the deploy.
+      - name: Upload Worker secrets
+        if: steps.cf.outputs.ready == 'true'
+        run: |
+          node -e '
+            const names = ["GEMINI_API_KEY", "CF_AI_ACCOUNT_ID", "CF_AI_TOKEN", "PIXABAY_API_KEY", "ADMIN_TOKEN"]
+            const out = {}
+            for (const n of names) {
+              const v = (process.env[n] || "").trim()
+              if (v) out[n] = v
+              else console.log(`::warning::${n} is not set in GitHub Secrets — skipped.`)
+            }
+            require("fs").writeFileSync(process.env.RUNNER_TEMP + "/worker-secrets.json", JSON.stringify(out))
+          '
+          npx wrangler secret bulk "$RUNNER_TEMP/worker-secrets.json"
+          rm -f "$RUNNER_TEMP/worker-secrets.json"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CF_AI_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
 
       - name: Smoke test
@@ -111,13 +128,13 @@ jobs:
 
   site:
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -134,7 +151,7 @@ jobs:
       - run: cp dist/index.html dist/404.html
 
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
       - id: deployment

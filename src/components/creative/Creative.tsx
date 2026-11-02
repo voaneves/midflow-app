@@ -6,14 +6,7 @@ import {
 import { alpha, luminance, mix, readableOn, saturation } from '../../lib/color'
 import { photoFocus, PHOTOS, photoUrl } from '../../lib/photos'
 import type { Creative as CreativeT, Palette, PostFormat, StyleId } from '../../lib/types'
-
-/* Every creative is designed on a 1080-wide canvas and scaled to whatever size it is shown at,
-   so thumbnails, the phone preview, the editor and the exported PNG are pixel-identical. */
-export const BASE_W = 1080
-export function baseHeight(kind: CreativeT['kind'], format: PostFormat) {
-  if (kind === 'story') return 1920
-  return format === '1:1' ? 1080 : 1350
-}
+import { BASE_W, baseHeight, creativeLabel } from './canvas'
 
 const ICONS: Record<string, typeof Sparkles> = {
   sparkles: Sparkles, droplet: Droplet, leaf: Leaf, zap: Zap, heart: Heart, shield: Shield, clock: Clock, star: Star,
@@ -43,17 +36,12 @@ interface Props {
   label?: string
 }
 
-/** Screen-reader description of a creative, e.g. "Story 3: Agende seu horário". */
-export const creativeLabel = (c: CreativeT) => `${c.kind === 'story' ? 'Story' : 'Post'} ${c.order}: ${c.headline}`
-
 export function Creative({ c, style, palette, format, brand, width, chrome = true, className, rounded = 0, label }: Props) {
   const ref = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState(width ?? 0)
+  const [measured, setW] = useState(0)
+  const w = width ?? measured
   useEffect(() => {
-    if (width) {
-      setW(width)
-      return
-    }
+    if (width) return
     const el = ref.current
     if (!el) return
     const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
@@ -288,11 +276,13 @@ function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
   const [fallbackUsed, setFallbackUsed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(true)
-  useEffect(() => {
+  const [shownId, setShownId] = useState(id)
+  if (shownId !== id) {
+    setShownId(id)
     setFallbackUsed(false)
     setAttempt(0)
     setBusy(true)
-  }, [id])
+  }
 
   let fallbackUrl: string | undefined
   const isApi = !!id && id.startsWith('/api/image')

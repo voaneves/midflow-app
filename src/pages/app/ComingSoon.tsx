@@ -1,13 +1,14 @@
 import { BarChart3, CalendarDays, Clock, Eye, Heart, MessageCircle, TrendingUp } from 'lucide-react'
+import { useState } from 'react'
 import { Creative } from '../../components/creative/Creative'
-import { useLook } from '../../components/creative/parts'
+import { useLook } from '../../components/creative/helpers'
 import { Badge, Button, Card, cx, toast } from '../../components/ui'
 import { useApp } from '../../lib/store'
 
 function Calendar() {
   const library = useApp((s) => s.library)
   const { brand } = useLook()
-  const today = new Date()
+  const [today] = useState(() => new Date())
   const first = new Date(today.getFullYear(), today.getMonth(), 1)
   const days = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
   const offset = first.getDay()

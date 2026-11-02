@@ -19,7 +19,7 @@ import {
   Sparkles,
   Store,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { planDef } from '../lib/data'
@@ -67,9 +67,9 @@ const NOTIFICATIONS = [
 ]
 
 /** Places one contextual action in the app header (e.g. the Step 4 kebab on phones). */
+const HeaderSlot = createContext<HTMLElement | null>(null)
 export function HeaderAction({ children }: { children: ReactNode }) {
-  const [el, setEl] = useState<HTMLElement | null>(null)
-  useEffect(() => setEl(document.getElementById('header-action')), [])
+  const el = useContext(HeaderSlot)
   return el ? createPortal(children, el) : null
 }
 
@@ -396,7 +396,9 @@ export function AppLayout() {
     }
   }, [loc.pathname, meta.title])
 
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
   return (
+    <HeaderSlot.Provider value={headerSlot}>
     <div className="min-h-dvh bg-canvas lg:pl-[var(--sidebar-w)]" style={{ ['--sidebar-w' as string]: collapsed ? '72px' : '248px' }}>
       <a
         href="#main"
@@ -428,7 +430,7 @@ export function AppLayout() {
             </h1>
             <p className="hidden truncate text-sm text-fg-subtle lg:block">{meta.sub}</p>
           </div>
-          <div id="header-action" className="flex items-center" />
+          <div ref={setHeaderSlot} id="header-action" className="flex items-center" />
           <div className="hidden md:block">
             <Notifications />
           </div>
@@ -447,5 +449,6 @@ export function AppLayout() {
       <ExportHost />
       <InstallHint />
     </div>
+    </HeaderSlot.Provider>
   )
 }

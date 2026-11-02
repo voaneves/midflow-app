@@ -2,15 +2,17 @@ import { Box, ImageIcon, Images, Palette as PaletteIcon, Shapes, Sparkles, Trash
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../../components/creative/Creative'
-import { ColorSwatches, readFile, useLook } from '../../../components/creative/parts'
+import { ColorSwatches } from '../../../components/creative/parts'
+import { readFile, useLook } from '../../../components/creative/helpers'
 import { Button, ChoiceGroup, cx, StoriesIcon, TabPanel, Tabs, Toggle, toast } from '../../../components/ui'
 import { suggestedColors } from '../../../lib/color'
 import { STYLES, TONES } from '../../../lib/data'
 import { photoUrl } from '../../../lib/photos'
 import { useApp } from '../../../lib/store'
 import type { ImageType, ToneId } from '../../../lib/types'
-import { FlowActions, FlowLayout, Panel, useExamples } from './shared'
-import { TONE_ICON } from './Step1Briefing'
+import { FlowActions, FlowLayout, Panel } from './shared'
+import { useExamples } from './useExamples'
+import { TONE_ICON } from './icons'
 
 const IMAGE_TYPES: { id: ImageType; label: string; icon: typeof ImageIcon; desc: string }[] = [
   { id: 'fotos', label: 'Fotos reais', icon: ImageIcon, desc: 'Fotografia editorial realista escolhida pelo tema de cada post.' },

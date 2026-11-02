@@ -2,7 +2,7 @@ import { api } from './api'
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { derivePalette, suggestedColors } from './color'
-import { planDef, segmentDef } from './data'
+import { DEMO_BRIEFING_TEXT, planDef, segmentDef } from './data'
 import { generate, handleFrom, uid } from './generator'
 import { track } from './telemetry'
 import type {
@@ -57,10 +57,8 @@ export const DEMO_BRAND: Brand = {
   handle: 'studioaurora',
   segment: 'beleza',
   city: 'Palmas - TO',
-  about:
-    'Salão de beleza e estética com foco em tratamentos capilares, hidratação profunda, limpeza de pele e manicure. Atendimento personalizado, produtos profissionais e ambiente acolhedor.',
-  audience:
-    'Mulheres de 25 a 45 anos, que trabalham fora, valorizam autocuidado e procuram praticidade com resultados comprovados.',
+  about: DEMO_BRIEFING_TEXT.about,
+  audience: DEMO_BRIEFING_TEXT.audience,
   colors: ['#5A1428', '#C98B8B', '#F5C9D6', '#F4EADF'],
   tones: ['profissional', 'vendedor'],
   style: 'premium',
@@ -74,10 +72,7 @@ export function briefingFromBrand(b: Brand): Briefing {
     location: b.city,
     objectives: ['Atrair novos clientes', 'Fortalecer a marca'],
     audience: b.audience,
-    topics:
-      b.segment === 'beleza'
-        ? 'Dicas de manutenção capilar, limpeza de pele luminosa, transformações antes e depois, e promoções especiais da semana.'
-        : '',
+    topics: b.segment === 'beleza' ? DEMO_BRIEFING_TEXT.topics : '',
     tones: b.tones.length ? b.tones : ['profissional'],
     visualStyle: b.style,
     colors: b.colors,
@@ -434,7 +429,17 @@ export const useApp = create<State>()(
           style: styleFromBrand(nextBrand),
         })
       },
-      setBriefing: (b) => set((s) => ({ briefing: { ...s.briefing, ...b } })),
+      setBriefing: (b) =>
+        set((s) => {
+          const briefing = { ...s.briefing, ...b }
+          if (b.segment === undefined || b.segment === s.briefing.segment) return { briefing }
+          // Themes are per segment: a new segment means step 2 (and everything after it) must be redone.
+          return {
+            briefing,
+            content: s.content.themeId === 'custom' ? s.content : { ...s.content, themeId: null },
+            done: { ...s.done, 2: false, 3: false },
+          }
+        }),
       saveBriefingToBrand: () =>
         set((s) => {
           const b = s.briefing

@@ -86,7 +86,7 @@ export const config = {
     /** true → every generated card gets an AI image; false → only the editor's "Gerar nova imagem IA" button. */
     autoGenerate: bool('AI_IMAGES_AUTO', true),
     /** Stock photo fallback when AI images fail or hit the limit (server-side key only). */
-    pexelsKey: (process.env.PEXELS_API_KEY || '').trim(),
+    pixabayKey: (process.env.PIXABAY_API_KEY || '').trim(),
   },
 
   limits: {

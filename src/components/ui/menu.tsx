@@ -39,11 +39,19 @@ function MenuList({ id, items, onPick, onClose, labelledBy, sheet }: { id: strin
       role="menu"
       aria-labelledby={labelledBy}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowDown') (e.preventDefault(), move(1))
-        else if (e.key === 'ArrowUp') (e.preventDefault(), move(-1))
-        else if (e.key === 'Home') (e.preventDefault(), move('first'))
-        else if (e.key === 'End') (e.preventDefault(), move('last'))
-        else if (e.key === 'Escape') {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          move(1)
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          move(-1)
+        } else if (e.key === 'Home') {
+          e.preventDefault()
+          move('first')
+        } else if (e.key === 'End') {
+          e.preventDefault()
+          move('last')
+        } else if (e.key === 'Escape') {
           e.preventDefault()
           e.stopPropagation()
           onClose(true)
@@ -186,10 +194,15 @@ export function Popover({
   const panel = useRef<HTMLDivElement>(null)
   const phone = useIsPhone()
   const id = useId()
+  // Focus goes back to the trigger after an explicit close (Esc, an action inside), not after an outside click.
+  const [refocus, setRefocus] = useState(0)
   const close = () => {
     setOpen(false)
-    btn.current?.focus()
+    setRefocus((n) => n + 1)
   }
+  useEffect(() => {
+    if (refocus) btn.current?.focus()
+  }, [refocus])
   useEffect(() => {
     if (!open || phone) return
     const onDown = (e: PointerEvent) => {

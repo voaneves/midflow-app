@@ -30,7 +30,8 @@ import { HeaderAction } from '../../../components/AppLayout'
 import { Creative } from '../../../components/creative/Creative'
 import { CreativeViewer } from '../../../components/creative/CreativeViewer'
 import { LazyEditor as Editor } from '../../../components/creative/LazyEditor'
-import { CreativeTile, exportCreatives, jobFor, PhoneMockup, tileMenu, useLook, type Look } from '../../../components/creative/parts'
+import { CreativeTile, PhoneMockup } from '../../../components/creative/parts'
+import { exportCreatives, jobFor, tileMenu, useLook, type Look } from '../../../components/creative/helpers'
 import { SocialPublishModal } from '../../../components/creative/SocialPublishModal'
 import { StoryPlayer } from '../../../components/creative/StoryPlayer'
 import {
@@ -54,6 +55,7 @@ import {
   type MenuItem,
 } from '../../../components/ui'
 import { generateCustomImageWithAI } from '../../../lib/aiService'
+import { localISODate } from '../../../lib/dates'
 import { copyText } from '../../../lib/export'
 import { getSocialTips } from '../../../lib/social'
 import { paramsFrom, useActiveGen, useApp } from '../../../lib/store'
@@ -149,8 +151,7 @@ function ScheduleDialog({ open, onClose, items, themeLabel }: { open: boolean; o
   const brand = useApp((s) => s.brand)
   const scheduleCreative = useApp((s) => s.scheduleCreative)
   const tips = getSocialTips(brand.segment)
-  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-  const [date, setDate] = useState(tomorrow)
+  const [date, setDate] = useState(() => localISODate(new Date(Date.now() + 86_400_000)))
   const [time, setTime] = useState(tips.bestHours[0] || '11:30')
   const [notes, setNotes] = useState('')
   const [network, setNetwork] = useState<'instagram' | 'whatsapp' | 'facebook' | 'todas'>('instagram')

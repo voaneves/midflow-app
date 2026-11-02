@@ -178,7 +178,7 @@ interface AIStatus {
   imageModel: string | null
   imageLastError: string | null
   imageAuto?: boolean
-  stockFallback?: 'pexels' | 'catalog'
+  stockFallback?: 'pixabay' | 'catalog'
   minQuality: number
   lastOkAt: number | null
   lastErrorAt: number | null
@@ -252,7 +252,7 @@ function AIStatusCard() {
             </div>
             <div>
               <dt className="text-caption text-fg-subtle">Fotos de reserva</dt>
-              <dd className="font-semibold text-ink">{status.stockFallback === 'pexels' ? 'Pexels (banco de fotos)' : 'Catálogo interno'}</dd>
+              <dd className="font-semibold text-ink">{status.stockFallback === 'pixabay' ? 'Pixabay (banco de fotos)' : 'Catálogo interno'}</dd>
             </div>
             <div>
               <dt className="text-caption text-fg-subtle">Nota mínima de qualidade</dt>

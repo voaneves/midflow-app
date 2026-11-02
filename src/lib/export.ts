@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BASE_W, baseHeight, CreativeCanvas, type BrandMark } from '../components/creative/Creative'
+import { CreativeCanvas, type BrandMark } from '../components/creative/Creative'
+import { BASE_W, baseHeight } from '../components/creative/canvas'
 import { track } from './telemetry'
 import type { Creative, Palette, PostFormat, StyleId } from './types'
 

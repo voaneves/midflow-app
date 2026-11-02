@@ -7,7 +7,7 @@ import { Step2Content } from './Step2Content'
 import { Step3Style } from './Step3Style'
 import { Step4Generate } from './Step4Generate'
 
-export const STEPS = [
+const STEPS = [
   { n: 1, title: 'Briefing', sub: 'Informações da sua marca' },
   { n: 2, title: 'Conteúdo', sub: 'Tipo, tema e objetivo' },
   { n: 3, title: 'Estilo', sub: 'Visual, tom e formato' },
@@ -18,7 +18,8 @@ export const STEPS = [
 export function Stepper({ step }: { step: number }) {
   const done = useApp((s) => s.done)
   const reachable = (n: number) => n === 1 || (n === 2 && done[1]) || (n === 3 && done[1] && done[2]) || (n === 4 && done[1] && done[2] && done[3])
-  const isDone = (n: number) => n < 4 && done[n as 1 | 2 | 3] && n !== step
+  // Only steps behind the current one show as completed; later ones stay neutral even if visited before.
+  const isDone = (n: number) => n < step && done[n as 1 | 2 | 3]
   const cur = STEPS[step - 1]
   return (
     <nav aria-label="Etapas da criação">

@@ -2,7 +2,8 @@ import { AtSign, Check, Crown, MapPin, PenSquare, Plus, Trash2, Upload, X } from
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../components/creative/Creative'
-import { ColorSwatches, readFile } from '../../components/creative/parts'
+import { ColorSwatches } from '../../components/creative/parts'
+import { readFile } from '../../components/creative/helpers'
 import { ActionBar, Badge, Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, IconButton, Input, Select, Textarea, toast, useSavedIndicator } from '../../components/ui'
 import { derivePalette } from '../../lib/color'
 import { planDef, SEGMENT_OPTIONS, segmentDef, STYLES, TONES } from '../../lib/data'
@@ -11,7 +12,7 @@ import { photoUrl } from '../../lib/photos'
 import { briefingFromBrand, useApp } from '../../lib/store'
 import type { Brand as BrandType, SegmentId, StyleId, ToneId } from '../../lib/types'
 import { FlowLayout, Panel } from './create/shared'
-import { TONE_ICON } from './create/Step1Briefing'
+import { TONE_ICON } from './create/icons'
 
 const EMPTY_FORM = { name: '', handle: '', segment: 'beleza' as SegmentId, city: '' }
 

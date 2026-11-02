@@ -1,24 +1,12 @@
-import { Bookmark, Check, ChevronLeft, Copy, Download, Heart, Loader2, MessageCircle, MoreHorizontal, Pencil, Plus, Send, Share2, Trash2 } from 'lucide-react'
+import { Bookmark, Check, ChevronLeft, Download, Heart, Loader2, MessageCircle, MoreHorizontal, Pencil, Plus, Send, Share2, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { isHex, normalizeHex } from '../../lib/color'
-import { copyText, dataUrlToBlob, makeZip, renderPng, saveFile, slug, type ExportJob } from '../../lib/export'
-import { currentLook, useApp } from '../../lib/store'
-import { track } from '../../lib/telemetry'
+import { dataUrlToBlob, makeZip, renderPng, saveFile, type ExportJob } from '../../lib/export'
 import type { Creative as CreativeT, Palette, PostFormat, StyleId } from '../../lib/types'
 import { Button, CheckBadge, cx, Dialog, IconButton, Menu, toast, useIsPhone, useLongPress, type MenuItem } from '../ui'
-import { Creative, creativeLabel, type BrandMark } from './Creative'
-
-export type Look = { palette: Palette; style: StyleId; format: PostFormat; brand: BrandMark }
-
-/* ---------- shared look ---------- */
-export function useLook(): Look {
-  const style = useApp((s) => s.style)
-  const briefing = useApp((s) => s.briefing)
-  const brand = useApp((s) => s.brand)
-  const { palette, style: st } = currentLook({ style, briefing })
-  const mark: BrandMark = { name: brand.name, handle: brand.handle, logo: style.logo ?? brand.logo }
-  return { palette, style: st, format: style.postFormat, brand: mark }
-}
+import { creativeLabel } from './canvas'
+import { Creative, type BrandMark } from './Creative'
+import { setExportOpener, type Look } from './helpers'
 
 /* ---------- Instagram phone (desktop preview only; on a real phone the full-screen viewer replaces it) ---------- */
 export function PhoneMockup({ c, style, palette, format, brand, mode, city, className }: { c?: CreativeT; style: StyleId; palette: Palette; format: PostFormat; brand: BrandMark; mode: 'feed' | 'story'; city?: string; className?: string }) {
@@ -178,24 +166,11 @@ export function CreativeTile({
   )
 }
 
-export const tileMenu = (o: { caption: string; onDuplicate?: () => void; onDelete?: () => void }): MenuItem[] =>
-  [
-    { label: 'Copiar legenda', icon: <Copy className="size-4" />, onClick: async () => void ((await copyText(o.caption)) && toast('Legenda copiada')) },
-    o.onDuplicate && { label: 'Duplicar', icon: <Plus className="size-4" />, onClick: o.onDuplicate },
-    o.onDelete && { label: 'Remover', icon: <Trash2 className="size-4" />, onClick: o.onDelete, danger: true },
-  ].filter(Boolean) as MenuItem[]
-
 /* ---------- Export (PNG / ZIP / native share) ---------- */
 interface ExportState {
   open: boolean
   jobs: ExportJob[]
 }
-let openExport: (jobs: ExportJob[]) => void = () => {}
-export const exportCreatives = (jobs: ExportJob[]) => {
-  track('download', { count: jobs.length, brandName: jobs[0]?.brand.name })
-  openExport(jobs)
-}
-
 /** iOS Safari and many Android browsers save images better through the share sheet than through downloads. */
 function canShareFiles(files: File[]) {
   try {
@@ -212,14 +187,16 @@ export function ExportHost() {
   const [busy, setBusy] = useState(false)
   const phone = useIsPhone()
   useEffect(() => {
-    openExport = (jobs) => setSt({ open: true, jobs })
+    setExportOpener((jobs) => {
+      setFiles([])
+      setZipBlob(null)
+      setBusy(true)
+      setSt({ open: true, jobs })
+    })
   }, [])
   useEffect(() => {
     if (!st.open) return
     let alive = true
-    setFiles([])
-    setZipBlob(null)
-    setBusy(true)
     ;(async () => {
       const out: { name: string; dataUrl: string }[] = []
       for (const j of st.jobs) {
@@ -308,11 +285,6 @@ export function ExportHost() {
   )
 }
 const asFiles = (list: { name: string; dataUrl: string }[]) => list.map((f) => new File([dataUrlToBlob(f.dataUrl)], f.name, { type: 'image/png' }))
-
-export function jobFor(c: CreativeT, look: Look, i: number, theme: string): ExportJob {
-  const kind = c.kind === 'story' ? 'story' : 'post'
-  return { creative: c, ...look, name: `${String(i + 1).padStart(2, '0')}-${kind}-${slug(theme || c.headline)}.png` }
-}
 
 /* ---------- Color swatches with HEX editing (≤5) ----------
    Each swatch has an accessible name ("Cor 1, #0B765B"); the editor is a small dialog-like popover
@@ -431,14 +403,3 @@ export function ColorSwatches({ colors, onChange, max = 5, size = 'md', labelled
     </div>
   )
 }
-
-/* ---------- File → data URL ---------- */
-export function readFile(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = () => res(r.result as string)
-    r.onerror = rej
-    r.readAsDataURL(file)
-  })
-}
-

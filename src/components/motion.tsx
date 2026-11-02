@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
@@ -26,10 +26,11 @@ export function Reveal({ children, delay = 0, className, as = 'div', style }: { 
     io.observe(el)
     return () => io.disconnect()
   }, [])
-  return createElement(
-    as,
-    { ref, className, 'data-reveal': state === 'idle' ? undefined : state, style: { ...style, '--d': `${delay}ms` } as CSSProperties },
-    children,
+  const Tag = as as 'div'
+  return (
+    <Tag ref={ref as React.RefObject<HTMLDivElement>} className={className} data-reveal={state === 'idle' ? undefined : state} style={{ ...style, '--d': `${delay}ms` } as CSSProperties}>
+      {children}
+    </Tag>
   )
 }
 
@@ -37,7 +38,7 @@ export function Reveal({ children, delay = 0, className, as = 'div', style }: { 
 export function CountUp({ value, duration = 900 }: { value: number; duration?: number }) {
   const [n, setN] = useState(reduced() ? value : 0)
   useEffect(() => {
-    if (reduced()) return setN(value)
+    if (reduced()) return
     let raf = 0
     const t0 = performance.now()
     const tick = (t: number) => {
@@ -48,5 +49,5 @@ export function CountUp({ value, duration = 900 }: { value: number; duration?: n
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [value, duration])
-  return <>{n}</>
+  return <>{reduced() ? value : n}</>
 }
