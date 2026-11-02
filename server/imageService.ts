@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR, PHOTOS_DIR } from './paths.ts'
 import { generateAIImage } from './ai/image.ts'
+import { fetchPexelsPhoto } from './pexels.ts'
 
 const CACHE_DIR = path.join(DATA_DIR, 'image-cache')
 
@@ -39,6 +40,8 @@ export interface ImageGenOptions {
   accent?: string
   light?: string
   fallback?: string
+  /** Editorial photo chosen for this card when the generation was built (unique per generation). */
+  editorial?: string
   forceAi?: boolean
 }
 
@@ -284,16 +287,18 @@ export function buildDetailedImagePrompt(opts: ImageGenOptions): string {
         ? 'fotos'
         : 'render'
       : opts.imageType || 'fotos'
+  // flux-1-schnell on Workers AI only outputs 1024×1024; posts (4:5) and stories (9:16) crop it.
+  const framing = 'Main subject centered with generous empty space around it, so a vertical crop keeps it whole'
 
   if (effectiveType === 'ilustracoes') {
-    return `${baseSubject}. Style: Modern flat editorial vector illustration, contemporary minimalist graphic art, clean geometric shapes, smooth gradients, palette with ${opts.dark || '#111'} and ${opts.accent || '#12B386'}, Behance editorial illustration, no text, no letters, no words, no watermark.`
+    return `${baseSubject}. ${framing}. Style: Modern flat editorial vector illustration, contemporary minimalist graphic art, clean geometric shapes, smooth gradients, palette with ${opts.dark || '#111'} and ${opts.accent || '#12B386'}, Behance editorial illustration, no text, no letters, no words, no watermark.`
   }
 
   if (effectiveType === 'render') {
-    return `${baseSubject}. Style: 3D studio render, Cinema4D Octane render aesthetic, soft global illumination, tactile luxury materials, glass and matte clay textures, minimalist podium composition, studio lighting, no text, no letters, no words, no watermark.`
+    return `${baseSubject}. ${framing}. Style: 3D studio render, Cinema4D Octane render aesthetic, soft global illumination, tactile luxury materials, glass and matte clay textures, minimalist podium composition, studio lighting, no text, no letters, no words, no watermark.`
   }
 
-  return `${baseSubject}. Style: High-end editorial commercial photography for Instagram (${opts.style || 'modern'} aesthetic), natural studio lighting, shallow depth of field, 85mm lens, rich authentic colors, photorealistic 8k, no text, no letters, no words, no watermark.`
+  return `${baseSubject}. ${framing}. Style: High-end editorial commercial photography for Instagram (${opts.style || 'modern'} aesthetic), natural studio lighting, shallow depth of field, 85mm lens, rich authentic colors, photorealistic 8k, no text, no letters, no words, no watermark.`
 }
 
 /**
@@ -316,6 +321,7 @@ export function buildApiImageUrl(opts: ImageGenOptions): string {
   if (opts.accent) params.set('accent', opts.accent)
   if (opts.light) params.set('light', opts.light)
   if (opts.fallback) params.set('fallback', opts.fallback)
+  if (opts.editorial) params.set('photo', opts.editorial)
   if (opts.forceAi) params.set('ai', '1')
   return `/api/image?${params.toString()}`
 }
@@ -324,25 +330,46 @@ export function buildApiImageUrl(opts: ImageGenOptions): string {
  * Seleciona e baixa em ~150ms uma fotografia editorial HD (1080p) da CDN do Unsplash
  * coerente com o assunto do post e garante que cada card receba uma imagem distinta.
  */
-async function fetchCuratedEditorialPhoto(opts: ImageGenOptions): Promise<{ buffer: Buffer; mimeType: string } | null> {
+/** Topic photos that match the card text first, then the segment pool (no duplicates). */
+function editorialPool(opts: Pick<ImageGenOptions, 'segment' | 'themeId' | 'customTheme' | 'headline' | 'prompt'>): string[] {
   const segment = opts.segment || 'beleza'
   const searchStr = `${opts.themeId || ''} ${opts.customTheme || ''} ${opts.headline || ''} ${opts.prompt || ''}`.toLowerCase()
-  const order = opts.order || 1
-  const seed = opts.seed || 1
-
-  let pool: string[] = []
+  const pool: string[] = []
   for (const entry of UNSPLASH_TOPIC_POOLS) {
     if (entry.segments && !entry.segments.includes(segment)) continue
-    if (entry.keywords.test(searchStr)) {
-      pool.push(...entry.ids)
-    }
+    if (entry.keywords.test(searchStr)) pool.push(...entry.ids)
   }
-  const segIds = UNSPLASH_SEGMENT_POOLS[segment] || UNSPLASH_SEGMENT_POOLS.outro
-  pool = Array.from(new Set([...pool, ...segIds]))
+  return Array.from(new Set([...pool, ...(UNSPLASH_SEGMENT_POOLS[segment] || UNSPLASH_SEGMENT_POOLS.outro)]))
+}
 
-  // Deslocamento determinístico por order (1..8) + seed da versão para que os 4 posts e 4 stories nunca repitam a mesma foto
+/** Every catalogued id: the only values `/api/image?photo=` accepts. */
+const EDITORIAL_IDS = new Set([...UNSPLASH_TOPIC_POOLS.flatMap((e) => e.ids), ...Object.values(UNSPLASH_SEGMENT_POOLS).flat()])
+export const isEditorialPhotoId = (id: string | null | undefined): id is string => !!id && EDITORIAL_IDS.has(id)
+
+/**
+ * Picks the editorial photo for one card while a generation is built. Each /api/image request is
+ * independent, so uniqueness has to be decided here: never repeat within the posts or within the
+ * stories, and avoid repeating across them too while the segment pool has photos left.
+ */
+export function selectEditorialPhotoId(
+  opts: Pick<ImageGenOptions, 'segment' | 'themeId' | 'customTheme' | 'headline' | 'prompt'> & { order: number; seed: number; usedIds: Set<string>; usedSameKind?: Set<string> },
+): string {
+  const pool = editorialPool(opts)
+  const start = Math.abs(opts.seed * 7 + opts.order * 3) % pool.length
+  const ring = pool.map((_, k) => pool[(start + k) % pool.length])
+  const chosen = ring.find((id) => !opts.usedIds.has(id)) ?? ring.find((id) => !opts.usedSameKind?.has(id)) ?? ring[0]
+  opts.usedIds.add(chosen)
+  opts.usedSameKind?.add(chosen)
+  return chosen
+}
+
+async function fetchCuratedEditorialPhoto(opts: ImageGenOptions): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const pool = editorialPool(opts)
+  const order = opts.order || 1
+  const seed = opts.seed || 1
   const baseIdx = Math.abs(seed * 7 + order * 3) % pool.length
-  const candidates = [pool[baseIdx], pool[(baseIdx + 1) % pool.length]]
+  // The id picked at generation time comes first; the computed ones are only a fallback if it fails to download.
+  const candidates = [...(isEditorialPhotoId(opts.editorial) ? [opts.editorial] : []), pool[baseIdx], pool[(baseIdx + 1) % pool.length]]
 
   const w = 1080
   const h = opts.kind === 'story' ? 1440 : 1080
@@ -498,14 +525,25 @@ function buildStudioProceduralArtwork(opts: ImageGenOptions, fallbackPhotoId: st
   }
 }
 
+export interface ResolvedImage {
+  buffer: Buffer
+  mimeType: string
+  source: string
+  /** true when the image was generated by the image model (not a stock photo or composed artwork). */
+  ai: boolean
+  /** Photographer credit for stock photos (shown in the UI before a public launch). */
+  credit?: string
+}
+
 /**
- * Resolve uma imagem em alta resolução para `GET /api/image`:
- * 1. Verifica cache em memória e em disco (`server/data/image-cache`)
- * 2. Se `forceAi` estiver ativo (botão "Gerar nova imagem IA"), tenta a IA de imagem configurada (Cloudflare Workers AI ou Gemini)
- * 3. Para `fotos` (ou metade fotográfica de `misto`), baixa em ~150ms uma foto editorial 1080p inédita do catálogo curado Unsplash CDN
- * 4. Para `ilustracoes` e `render` (ou se offline), compõe arte Studio SVG/3D exclusiva por `seed` e `order`
+ * Resolves the image for `GET /api/image`:
+ * 1. Memory/disk cache.
+ * 2. `forceAi` (every generated card by default, or the editor's "Gerar nova imagem IA"): Cloudflare Workers AI / Gemini.
+ * 3. Photos mode (when AI is off, failed or over the limit): Pexels stock photo, then the curated Unsplash catalog.
+ * 4. Illustrations/render modes, or everything above failed: SVG artwork composed from a local photo.
+ * A fallback served in place of a requested AI image is not cached, so the next view retries the AI.
  */
-export async function resolveContextualImage(opts: ImageGenOptions): Promise<{ buffer: Buffer; mimeType: string; source: string }> {
+export async function resolveContextualImage(opts: ImageGenOptions): Promise<ResolvedImage> {
   const fullPrompt = buildDetailedImagePrompt(opts)
   const effectiveType =
     opts.imageType === 'misto'
@@ -522,6 +560,7 @@ export async function resolveContextualImage(opts: ImageGenOptions): Promise<{ b
         t: effectiveType,
         s: opts.seed || 1,
         o: opts.order || 1,
+        e: opts.editorial,
         d: opts.dark,
         a: opts.accent,
         ai: opts.forceAi ? 1 : 0,
@@ -530,59 +569,59 @@ export async function resolveContextualImage(opts: ImageGenOptions): Promise<{ b
     .digest('hex')
     .slice(0, 24)
 
-  // 1. Verifica cache em memória
+  const persist = (entry: { buffer: Buffer; mimeType: string }, writeDisk: boolean) => {
+    if (writeDisk) {
+      try {
+        fs.writeFileSync(path.join(CACHE_DIR, `${cacheKey}.${entry.mimeType.includes('png') ? 'png' : 'jpg'}`), entry.buffer)
+      } catch {
+        // read-only file system (Workers): memory + edge cache only
+      }
+    }
+    remember(cacheKey, entry)
+  }
+  // Under an AI key only AI images are ever stored, so a cache hit there is an AI image.
+  const cachedIsAi = !!opts.forceAi
+
+  // 1. Cache
   const mem = memoryImageCache.get(cacheKey)
-  if (mem) {
-    return { ...mem, source: 'memory-cache' }
+  if (mem) return { ...mem, source: 'memory-cache', ai: cachedIsAi }
+  for (const [ext, mimeType] of [['jpg', 'image/jpeg'], ['png', 'image/png']] as const) {
+    const file = path.join(CACHE_DIR, `${cacheKey}.${ext}`)
+    if (fs.existsSync(file)) {
+      const entry = { buffer: fs.readFileSync(file), mimeType }
+      remember(cacheKey, entry)
+      return { ...entry, source: 'disk-cache', ai: cachedIsAi }
+    }
   }
 
-  // 2. Verifica cache em disco
-  const jpgCachePath = path.join(CACHE_DIR, `${cacheKey}.jpg`)
-  const pngCachePath = path.join(CACHE_DIR, `${cacheKey}.png`)
-  if (fs.existsSync(jpgCachePath)) {
-    const buffer = fs.readFileSync(jpgCachePath)
-    const entry = { buffer, mimeType: 'image/jpeg' }
-    remember(cacheKey, entry)
-    return { ...entry, source: 'disk-cache' }
-  }
-  if (fs.existsSync(pngCachePath)) {
-    const buffer = fs.readFileSync(pngCachePath)
-    const entry = { buffer, mimeType: 'image/png' }
-    remember(cacheKey, entry)
-    return { ...entry, source: 'disk-cache' }
-  }
-
-  // 3. Se solicitado via "Estúdio Visual IA" / "Gerar nova imagem IA" (forceAi), tenta motores generativos primeiro
+  // 2. AI image
   if (opts.forceAi) {
     const aiImg = await generateAIImage(fullPrompt, opts.kind)
     if (aiImg) {
       const entry = { buffer: aiImg.buffer, mimeType: aiImg.mimeType }
-      try {
-        const ext = aiImg.mimeType.includes('png') ? 'png' : 'jpg'
-        fs.writeFileSync(path.join(CACHE_DIR, `${cacheKey}.${ext}`), aiImg.buffer)
-      } catch {
-        // Ignore
-      }
-      remember(cacheKey, entry)
-      return { ...entry, source: aiImg.source }
+      persist(entry, true)
+      return { ...entry, source: aiImg.source, ai: true }
     }
   }
+  const keep = !opts.forceAi // do not pin a fallback under an AI request
 
-  // 4. Para o modo "fotos", busca fotografia editorial HD 1080p na CDN curada do Unsplash (~150ms, zero travamento!)
+  // 3. Stock photos: Pexels first, then the curated Unsplash catalog
+  if (effectiveType === 'fotos') {
+    const pexels = await fetchPexelsPhoto({ prompt: opts.prompt, segment: opts.segment, kind: opts.kind, order: opts.order, seed: opts.seed })
+    if (pexels) {
+      if (keep) persist(pexels, true)
+      return { buffer: pexels.buffer, mimeType: pexels.mimeType, source: 'pexels', ai: false, credit: pexels.credit }
+    }
+  }
   if (effectiveType === 'fotos') {
     const editorialPhoto = await fetchCuratedEditorialPhoto(opts)
     if (editorialPhoto) {
-      try {
-        fs.writeFileSync(jpgCachePath, editorialPhoto.buffer)
-      } catch {
-        // Ignore
-      }
-      remember(cacheKey, editorialPhoto)
-      return { ...editorialPhoto, source: 'editorial-hd' }
+      if (keep) persist(editorialPhoto, true)
+      return { ...editorialPhoto, source: 'editorial-hd', ai: false }
     }
   }
 
-  // 5. Para "ilustracoes", "render" ou fallback offline, compõe arte vetorial/3D em alta definição
+  // 4. Composed artwork (illustration/render modes or offline)
   const fallbackPhotoId =
     opts.fallback ||
     selectContextualPhotoId({
@@ -592,8 +631,7 @@ export async function resolveContextualImage(opts: ImageGenOptions): Promise<{ b
       order: opts.order || 1,
       seed: opts.seed || 1,
     })
-
   const studioArt = buildStudioProceduralArtwork(opts, fallbackPhotoId)
-  remember(cacheKey, studioArt)
-  return { ...studioArt, source: 'contextual-studio' }
+  if (keep) remember(cacheKey, studioArt)
+  return { ...studioArt, source: 'contextual-studio', ai: false }
 }

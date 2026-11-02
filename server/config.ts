@@ -83,13 +83,17 @@ export const config = {
     /** Workers AI text-to-image model. flux-1-schnell is fast and cheap on the free daily allowance. */
     cfModel: (process.env.CF_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell').trim(),
     timeoutMs: num('IMAGE_TIMEOUT_MS', 60_000),
+    /** true → every generated card gets an AI image; false → only the editor's "Gerar nova imagem IA" button. */
+    autoGenerate: bool('AI_IMAGES_AUTO', true),
+    /** Stock photo fallback when AI images fail or hit the limit (server-side key only). */
+    pexelsKey: (process.env.PEXELS_API_KEY || '').trim(),
   },
 
   limits: {
     /** Per IP, per hour. */
     generatePerHour: num('RATE_GENERATE_PER_HOUR', 30),
     rewritePerHour: num('RATE_REWRITE_PER_HOUR', 120),
-    aiImagePerHour: num('RATE_AI_IMAGE_PER_HOUR', 40),
+    aiImagePerHour: num('RATE_AI_IMAGE_PER_HOUR', 160), // 8 per generation → 20 generations/hour
     imagePerHour: num('RATE_IMAGE_PER_HOUR', 1500),
     eventsPerHour: num('RATE_EVENTS_PER_HOUR', 600),
     bodyBytes: num('MAX_BODY_BYTES', 256 * 1024),

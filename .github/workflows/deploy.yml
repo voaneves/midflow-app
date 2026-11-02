@@ -83,11 +83,13 @@ jobs:
             GEMINI_API_KEY
             CF_AI_ACCOUNT_ID
             CF_AI_TOKEN
+            PEXELS_API_KEY
             ADMIN_TOKEN
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CF_AI_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
 
       - name: Smoke test

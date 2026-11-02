@@ -7,7 +7,7 @@ import type { GenerateParams } from './ai/types.ts'
 import { aiEnabled, config, imageAiEnabled, imageModelName } from './config.ts'
 import { imageHealth } from './ai/image.ts'
 import { applyCors, HttpError, rateLimit, readJson, requireAdmin, sendJson } from './http.ts'
-import { buildApiImageUrl, resolveContextualImage, selectContextualPhotoId } from './imageService.ts'
+import { buildApiImageUrl, isEditorialPhotoId, resolveContextualImage, selectContextualPhotoId, selectEditorialPhotoId } from './imageService.ts'
 import { CLIENT_EVENT_TYPES, logEvent, metrics, type EventType } from './telemetry.ts'
 
 const uid = (prefix = 'id') => `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-3)}`
@@ -79,6 +79,8 @@ const STYLE_HARMONY: Record<string, string[]> = {
 function toGeneration(params: GenerateParams, version: number, result: PackResult) {
   const baseSeed = (params.seed || 1) + version * 97
   const usedPhotoIds = new Set<string>()
+  const usedEditorialIds = new Set<string>()
+  const usedEditorialByKind = { post: new Set<string>(), story: new Set<string>() }
   const postStyles = STYLE_HARMONY[params.style] || [params.style]
 
   const image = (p: { imagePrompt?: string; headline: string; sub?: string }, kind: 'post' | 'story', order: number, style: string) => {
@@ -90,6 +92,17 @@ function toGeneration(params: GenerateParams, version: number, result: PackResul
       order,
       seed,
       usedIds: usedPhotoIds,
+    })
+    const editorial = selectEditorialPhotoId({
+      segment: params.segment,
+      themeId: params.themeId,
+      customTheme: params.customTheme,
+      headline: p.headline,
+      prompt: p.imagePrompt,
+      order,
+      seed,
+      usedIds: usedEditorialIds,
+      usedSameKind: usedEditorialByKind[kind],
     })
     return buildApiImageUrl({
       prompt: p.imagePrompt,
@@ -109,6 +122,9 @@ function toGeneration(params: GenerateParams, version: number, result: PackResul
       accent: params.palette.accent,
       light: params.palette.light,
       fallback,
+      editorial,
+      // Every card asks for an AI image; /api/image falls back to Pexels/catalog when AI is off, failing or over the limit.
+      forceAi: config.image.autoGenerate && imageAiEnabled(),
     })
   }
 
@@ -195,6 +211,8 @@ const routes: Record<string, Handler> = {
       model: config.ai.model,
       imageProvider: config.image.provider,
       imageModel: imageModelName(),
+      imageAuto: config.image.autoGenerate && imageAiEnabled(),
+      stockFallback: config.image.pexelsKey ? 'pexels' : 'catalog',
       imageLastError: imageHealth.lastErrorAt && (!imageHealth.lastOkAt || imageHealth.lastErrorAt > imageHealth.lastOkAt) ? imageHealth.lastError : null,
       minQuality: config.ai.minQuality,
       lastOkAt: llmHealth.lastOkAt ?? null,
@@ -225,8 +243,17 @@ const routes: Record<string, Handler> = {
 
   'GET /api/image': async (req, res, url) => {
     const q = url.searchParams
-    const forceAi = q.get('ai') === '1' && imageAiEnabled()
-    rateLimit(req, forceAi ? 'ai-image' : 'image', forceAi ? config.limits.aiImagePerHour : config.limits.imagePerHour)
+    let forceAi = q.get('ai') === '1' && imageAiEnabled()
+    if (forceAi) {
+      // Over the AI image limit → serve the stock-photo fallback instead of a broken image.
+      try {
+        rateLimit(req, 'ai-image', config.limits.aiImagePerHour)
+      } catch (err) {
+        if (!(err instanceof HttpError) || err.status !== 429) throw err
+        forceAi = false
+      }
+    }
+    if (!forceAi) rateLimit(req, 'image', config.limits.imagePerHour)
     const result = await resolveContextualImage({
       prompt: text(q.get('prompt'), 400) || undefined,
       headline: text(q.get('headline'), 120) || undefined,
@@ -242,11 +269,17 @@ const routes: Record<string, Handler> = {
       accent: color(q.get('accent')),
       light: color(q.get('light')),
       fallback: slug(q.get('fallback')),
+      editorial: isEditorialPhotoId(q.get('photo')) ? q.get('photo')! : undefined,
       forceAi,
     })
     res.statusCode = 200
     res.setHeader('Content-Type', result.mimeType)
-    res.setHeader('Cache-Control', 'public, max-age=86400')
+    // An AI image is tied to its URL (prompt + seed): keep it, so thumbnail, preview and PNG export match.
+    // A fallback served in place of an AI image is cached briefly, so a later view can still get the AI one.
+    const asked = q.get('ai') === '1' && imageAiEnabled()
+    res.setHeader('Cache-Control', result.ai ? 'public, max-age=2592000, immutable' : asked ? 'public, max-age=300' : 'public, max-age=86400')
+    res.setHeader('X-Midflow-Image-AI', result.ai ? '1' : '0')
+    if (result.credit) res.setHeader('X-Midflow-Photo-Credit', encodeURIComponent(result.credit))
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('X-Midflow-Image-Source', result.source)
     // SVG artwork must never run scripts, even if opened directly.

@@ -20,4 +20,35 @@ const server = createServer(async (req, res) => {
   }
 })
 
-export default httpServerHandler(server)
+// Minimal Workers types (no @cloudflare/workers-types dependency).
+interface Ctx {
+  waitUntil(p: Promise<unknown>): void
+}
+type FetchHandler = { fetch(req: Request, env: unknown, ctx: Ctx): Promise<Response> }
+interface EdgeCache {
+  match(req: Request): Promise<Response | undefined>
+  put(req: Request, res: Response): Promise<void>
+}
+declare const caches: { default: EdgeCache }
+
+const node = httpServerHandler(server) as FetchHandler
+
+/**
+ * Edge cache for /api/image. Flux on Workers AI has no seed, so the same URL would produce a new
+ * picture on every call: caching by URL keeps thumbnail, preview, editor and PNG export identical,
+ * and each card is generated (and billed) once. The route's Cache-Control decides how long:
+ * AI images 30 days, a fallback served in place of an AI image only 5 minutes.
+ */
+export default {
+  async fetch(request: Request, env: unknown, ctx: Ctx): Promise<Response> {
+    const isImage = request.method === 'GET' && new URL(request.url).pathname.endsWith('/api/image')
+    if (!isImage) return node.fetch(request, env, ctx)
+
+    const cache = caches.default
+    const hit = await cache.match(request)
+    if (hit) return hit
+    const res = await node.fetch(request, env, ctx)
+    if (res.ok) ctx.waitUntil(cache.put(request, res.clone()))
+    return res
+  },
+}

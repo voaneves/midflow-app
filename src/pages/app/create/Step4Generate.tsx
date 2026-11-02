@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
@@ -9,12 +10,14 @@ import {
   FolderPlus,
   Hash,
   ListChecks,
+  Loader2,
   MoreVertical,
   Pencil,
   Play,
   RefreshCw,
   Save,
   Send,
+  ShieldCheck,
   Sparkles,
   Wand2,
   WifiOff,
@@ -42,7 +45,6 @@ import {
   InstagramIcon,
   Input,
   Menu,
-  ProgressBar,
   Select,
   Skeleton,
   StoriesIcon,
@@ -58,52 +60,69 @@ import { paramsFrom, useActiveGen, useApp } from '../../../lib/store'
 import { engineLabel, sendFeedback, track } from '../../../lib/telemetry'
 import type { Creative as CreativeT, Generation } from '../../../lib/types'
 
-const PHASES = [
-  'Analisando seu briefing',
-  'Pesquisando ganchos que convertem',
-  'Escrevendo títulos e chamadas para ação',
-  'Montando as artes com as cores da sua marca',
-  'Estruturando a sequência de Stories',
-  'Revisando legendas e hashtags',
+/**
+ * Real stages only. The server writes the copy and runs the quality gate in one request, so the middle
+ * stage stays active until the response arrives; nothing is marked done before it actually is.
+ */
+const STAGES = [
+  { done: 'Briefing enviado', active: 'Enviando briefing' },
+  { done: 'Textos criados e revisados', active: 'A IA está escrevendo e revisando textos, legendas e hashtags' },
+  { done: 'Artes montadas', active: 'Montar as artes com as cores da sua marca' },
 ]
 
-/** Indeterminate progress tied to the real request: rotating copy while it runs, a Cancel button. */
+/** Progress tied to the real request: elapsed time, the current stage, and a Cancel button. */
 function Generating({ version, onCancel }: { version: number; onCancel: () => void }) {
-  const [i, setI] = useState(0)
   const [secs, setSecs] = useState(0)
   useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % PHASES.length), 2400)
     const s = setInterval(() => setSecs((x) => x + 1), 1000)
-    return () => {
-      clearInterval(t)
-      clearInterval(s)
-    }
+    return () => clearInterval(s)
   }, [])
+  const current = 1 // request sent; waiting for the server
   return (
     <section aria-labelledby="gen-title" className="rounded-2xl border border-line bg-white p-6 shadow-card sm:p-8">
-      <div className="mx-auto max-w-md text-center">
-        <div className="relative mx-auto grid size-20 place-items-center" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-brand-200/60 motion-reduce:hidden" />
-          <span className="relative grid size-20 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-white shadow-cta">
-            <Sparkles className="size-9" />
-          </span>
+      <div className="mx-auto max-w-md">
+        <div className="text-center">
+          <div className="relative mx-auto grid size-20 place-items-center" aria-hidden>
+            <span className="absolute inset-0 animate-ping rounded-full bg-brand-200/60 motion-reduce:hidden" />
+            <span className="relative grid size-20 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-800 text-white shadow-cta">
+              <Sparkles className="size-9" />
+            </span>
+          </div>
+          <h2 id="gen-title" className="mt-6 text-title font-bold">
+            {version > 1 ? `Criando a versão ${version}…` : 'Criando seu conteúdo…'}
+          </h2>
+          <p role="status" className="sr-only">
+            Gerando conteúdo. Isso pode levar alguns segundos.
+          </p>
         </div>
-        <h2 id="gen-title" className="mt-6 text-title font-bold">
-          {version > 1 ? `Criando a versão ${version}…` : 'Criando seu conteúdo…'}
-        </h2>
-        <p className="mt-1 h-6 text-sm font-medium text-brand-800 transition" aria-hidden>
-          {PHASES[i]}
+        <ol className="mt-6 grid gap-3 text-sm">
+          {STAGES.map((st, i) => {
+            const state = i < current ? 'done' : i === current ? 'active' : 'todo'
+            return (
+              <li key={st.done} className="flex items-start gap-3" aria-current={state === 'active' ? 'step' : undefined}>
+                {state === 'done' ? (
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-brand-700" aria-hidden />
+                ) : state === 'active' ? (
+                  <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-brand-700 motion-reduce:animate-none" aria-hidden />
+                ) : (
+                  <span className="mt-0.5 size-5 shrink-0 rounded-full border-2 border-slate-300" aria-hidden />
+                )}
+                <span className={cx(state === 'done' && 'text-fg-muted', state === 'active' && 'font-semibold text-ink', state === 'todo' && 'text-fg-subtle')}>
+                  {state === 'done' ? st.done : st.active}
+                  <span className="sr-only">{state === 'done' ? ' (concluído)' : state === 'active' ? ' (em andamento)' : ' (a seguir)'}</span>
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+        <p className="mt-5 text-center text-xs text-fg-subtle tabular-nums">
+          {secs < 20 ? `${secs} s · costuma levar de 10 a 30 segundos.` : `Ainda trabalhando (${secs} s). Conexões lentas podem demorar mais.`}
         </p>
-        <p role="status" className="sr-only">
-          Gerando conteúdo. Isso pode levar alguns segundos.
-        </p>
-        <ProgressBar label="Gerando conteúdo" className="mt-5" />
-        <p className="mt-3 text-xs text-fg-subtle tabular-nums">
-          {secs < 20 ? 'Costuma levar de 10 a 30 segundos.' : `Ainda trabalhando (${secs} s). Conexões lentas podem demorar mais.`}
-        </p>
-        <Button variant="secondary" className="mt-5" onClick={onCancel}>
-          <X className="size-4" aria-hidden /> Cancelar
-        </Button>
+        <div className="mt-5 text-center">
+          <Button variant="secondary" onClick={onCancel}>
+            <X className="size-4" aria-hidden /> Cancelar
+          </Button>
+        </div>
       </div>
     </section>
   )
@@ -688,23 +707,34 @@ export function Step4Generate() {
   )
 }
 
-/** Which engine wrote this version, and its quality score. Templates are never presented as AI. Tap explains. */
+/**
+ * Short verdict instead of the provider name: "Qualidade aprovada" when the AI output passed the quality gate.
+ * Templates are never presented as AI (amber "Modelo de reserva"). Engine and score are in the dialog and for screen readers.
+ */
 function EngineBadge({ gen, onExplain }: { gen: Generation; onExplain: () => void }) {
   const { label, isAI } = engineLabel(gen.engine)
+  const q = gen.quality
+  const state = !isAI ? 'fallback' : q && !q.passed ? 'review' : q ? 'approved' : 'ai'
+  const ui = {
+    approved: { text: 'Qualidade aprovada', Icon: ShieldCheck, tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300', icon: 'text-emerald-700' },
+    ai: { text: 'Criado com IA', Icon: Sparkles, tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300', icon: 'text-emerald-700' },
+    review: { text: 'Revise antes de postar', Icon: AlertTriangle, tone: 'bg-warning-soft text-amber-950 ring-amber-300', icon: 'text-amber-700' },
+    fallback: { text: 'Modelo de reserva', Icon: AlertTriangle, tone: 'bg-warning-soft text-amber-950 ring-amber-300', icon: 'text-amber-700' },
+  }[state]
   return (
     <button
       type="button"
       onClick={onExplain}
       aria-haspopup="dialog"
-      className={cx(
-        'inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition hover:brightness-95',
-        isAI ? 'bg-emerald-50 text-emerald-900 ring-emerald-300' : 'bg-warning-soft text-amber-950 ring-amber-300',
-      )}
+      title={`${label}${q ? ` · nota ${q.score}/100` : ''}`}
+      className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition hover:brightness-95', ui.tone)}
     >
-      <Sparkles className={cx('size-4', isAI ? 'text-emerald-700' : 'text-amber-700')} aria-hidden />
-      {label}
-      {gen.quality && <span>· qualidade {gen.quality.score}/100</span>}
-      <span className="sr-only">. Ver detalhes</span>
+      <ui.Icon className={cx('size-4', ui.icon)} aria-hidden />
+      {ui.text}
+      <span className="sr-only">
+        . {label}
+        {q ? `, nota ${q.score} de 100` : ''}. Ver detalhes
+      </span>
     </button>
   )
 }

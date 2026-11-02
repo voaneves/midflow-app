@@ -59,6 +59,7 @@ Navegador ─► voaneves.com/midflow-app        → GitHub Pages (site, sem seg
 | `CLOUDFLARE_ACCOUNT_ID` | ID da conta Cloudflare | o mesmo `CF_AI_ACCOUNT_ID` do seu `.env` |
 | `GEMINI_API_KEY` | chave do Google (texto) | seu `.env` |
 | `CF_AI_TOKEN` | token "Workers AI" (imagens) | seu `.env` |
+| `PEXELS_API_KEY` | chave da Pexels (fotos de reserva) | pexels.com/api → Your API Key |
 | `ADMIN_TOKEN` | senha do painel de métricas | seu `.env` |
 
 O `.env` continua só no seu computador, para rodar localmente. Em produção, as chaves vêm desses segredos: o GitHub entrega à Cloudflare, e elas nunca entram no site.
@@ -121,11 +122,19 @@ O comando mostra a nota de cada pacote e os problemas encontrados, e salva tudo 
 
 ## 4.1 Imagens com IA
 
-O botão "Gerar nova imagem IA" do editor cria uma imagem exclusiva para o post. Se a IA de imagem falhar, a peça recebe uma foto curada, sem erro para o cliente.
+Cada post e story gerado recebe uma imagem exclusiva criada pela IA a partir da descrição que a IA de texto escreve para aquele card. O botão "Gerar nova imagem IA" do editor cria outra versão.
+
+Se a IA de imagem falhar, estiver desligada ou atingir o limite por hora, a peça recebe uma foto da **Pexels** (banco de fotos gratuito) e, se a Pexels também falhar, uma foto do catálogo interno. O cliente nunca vê imagem quebrada.
+
+- O Flux da Cloudflare só gera imagens quadradas (1024×1024); posts 4:5 e stories são recortados, por isso o prompt pede o assunto centralizado.
+- Cada imagem gerada fica em cache na Cloudflare por 30 dias, ligada à URL: miniatura, prévia e PNG exportado mostram a mesma imagem, e o card só é cobrado uma vez.
+- `AI_IMAGES_AUTO=false` volta ao modo antigo (IA só no botão do editor). `RATE_AI_IMAGE_PER_HOUR` (padrão 160 = 20 gerações completas por pessoa/hora) limita o uso.
+- **Antes do lançamento:** a Pexels exige crédito ao fotógrafo e à Pexels no app. O servidor já devolve o crédito no cabeçalho `X-Midflow-Photo-Credit`; falta exibir na interface.
 
 | Opção | Custo | Como ligar |
 |---|---|---|
-| **Cloudflare Workers AI** (Flux) | Grátis até a cota diária | `CF_AI_ACCOUNT_ID` e `CF_AI_TOKEN` no `.env` |
+| **Cloudflare Workers AI** (Flux) | Grátis até a cota diária (10.000 neurons/dia); depois, menos de US$ 0,001 por imagem | `CF_AI_ACCOUNT_ID` e `CF_AI_TOKEN` no `.env` |
+| **Pexels** (reserva) | Grátis (200 buscas/hora, 20.000/mês) | `PEXELS_API_KEY` no `.env` |
 | Google Nano Banana 2 Lite | ~US$ 0,034/imagem (exige faturamento) | `IMAGE_PROVIDER=gemini` |
 
 Como obter as credenciais da Cloudflare:
@@ -169,7 +178,7 @@ Para analisar em planilha: `server/data/events.jsonl` tem um evento JSON por lin
 | Dados entre dispositivos | Só no navegador; limpar o navegador apaga tudo | Tabelas `brands`, `generations` e `library` no banco |
 | Pagamento e limites de plano | Simulados no navegador | Mercado Pago/Asaas (Pix recorrente) ou Stripe, com limite aplicado no servidor |
 | Publicação no Instagram | Download + atalhos para o app | Meta Graph API (exige aprovação do app pela Meta) |
-| Fotos | Banco curado (Unsplash) + upload; IA de imagem opcional | Upload das fotos reais do cliente como padrão |
+| Fotos | IA de imagem em todos os cards; reserva Pexels + catálogo; upload | Crédito da Pexels na interface; guardar imagens geradas (R2) em vez de só cache; upload das fotos reais do cliente |
 | LGPD | Briefings registrados em `events.jsonl` | Termo de uso/privacidade e política de retenção |
 | Vários servidores | Limite de uso e métricas em memória/arquivo local | Redis + banco, se houver mais de uma instância |
 

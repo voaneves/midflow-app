@@ -176,6 +176,8 @@ interface AIStatus {
   imageProvider: 'cloudflare' | 'gemini' | 'none'
   imageModel: string | null
   imageLastError: string | null
+  imageAuto?: boolean
+  stockFallback?: 'pexels' | 'catalog'
   minQuality: number
   lastOkAt: number | null
   lastErrorAt: number | null
@@ -241,8 +243,15 @@ function AIStatusCard() {
             <div>
               <dt className="text-caption text-fg-subtle">Imagens com IA</dt>
               <dd className="font-semibold text-ink">
-                {status.imageProvider === 'none' ? 'Desligado — usando fotos curadas' : `${status.imageProvider === 'cloudflare' ? 'Cloudflare Workers AI' : 'Google Gemini'} · ${status.imageModel}`}
+                {status.imageProvider === 'none' ? 'Desligado — usando fotos de banco' : `${status.imageProvider === 'cloudflare' ? 'Cloudflare Workers AI' : 'Google Gemini'} · ${status.imageModel}`}
               </dd>
+              {status.imageProvider !== 'none' && (
+                <dd className="text-caption text-fg-subtle">{status.imageAuto ? 'Gera a imagem de todos os posts e stories.' : 'Só no botão "Gerar nova imagem IA" do editor.'}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="text-caption text-fg-subtle">Fotos de reserva</dt>
+              <dd className="font-semibold text-ink">{status.stockFallback === 'pexels' ? 'Pexels (banco de fotos)' : 'Catálogo interno'}</dd>
             </div>
             <div>
               <dt className="text-caption text-fg-subtle">Nota mínima de qualidade</dt>
@@ -254,7 +263,7 @@ function AIStatusCard() {
           <div className="mt-3 grid gap-3">
             {recentError && status.lastError && <div className="rounded-xl bg-warning-soft p-3 text-caption text-amber-950 ring-1 ring-amber-200">Último erro: {status.lastError}</div>}
             {status.imageLastError && (
-              <div className="rounded-xl bg-warning-soft p-3 text-caption text-amber-950 ring-1 ring-amber-200">Último erro de imagem: {status.imageLastError} (as peças seguem com fotos curadas)</div>
+              <div className="rounded-xl bg-warning-soft p-3 text-caption text-amber-950 ring-1 ring-amber-200">Último erro de imagem: {status.imageLastError} (as peças seguem com fotos de reserva)</div>
             )}
             {!status.aiEnabled && (
               <div className="rounded-xl bg-slate-50 p-3 text-caption text-fg-muted ring-1 ring-line">

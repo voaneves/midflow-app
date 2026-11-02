@@ -72,18 +72,17 @@ const SEGMENT_POOLS: Record<string, string[]> = {
   outro: ['laptop', 'coffee', 'team', 'interior', 'booking', 'smile-tall'],
 }
 
-export function pickContextualPhoto(text: string, segment = 'beleza', order = 1, seed = 1): string {
+/** `n` different photos for one theme: topic matches first, then the segment pool (repeats only if both run out). */
+export function pickDistinctPhotos(text: string, segment = 'beleza', n = 4, seed = 1): string[] {
   const matches: string[] = []
   for (const [re, list, segments] of KEYWORD_PHOTOS) {
     if (segments && !segments.includes(segment)) continue
     if (re.test(text)) matches.push(...list)
   }
-  const uniqueMatches = Array.from(new Set(matches))
-  if (uniqueMatches.length > 0) {
-    return uniqueMatches[Math.abs(seed + order * 3) % uniqueMatches.length]
-  }
-  const pool = SEGMENT_POOLS[segment] || SEGMENT_POOLS.outro
-  return pool[Math.abs(seed + order * 3) % pool.length]
+  const pool = Array.from(new Set([...matches, ...(SEGMENT_POOLS[segment] || SEGMENT_POOLS.outro)]))
+  const start = Math.abs(seed) % Math.max(1, matches.length || pool.length)
+  const ring = [...pool.slice(start), ...pool.slice(0, start)]
+  return Array.from({ length: n }, (_, i) => ring[i % ring.length])
 }
 
 export function photoUrl(id?: string) {

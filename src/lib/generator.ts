@@ -6,7 +6,7 @@
  */
 import { rewriteCopyLocally } from './aiService'
 import { segmentDef, type PostSeed, type SegmentDef, type ThemeCat, type ThemeDef } from './data'
-import { pickContextualPhoto } from './photos'
+import { pickDistinctPhotos } from './photos'
 import type { Creative, GenParams, Generation, ObjectiveId, SegmentId, ToneId } from './types'
 
 export function rng(seed: number) {
@@ -74,19 +74,15 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
   const base = seg.themes[0]
   const clean = text.trim().replace(/\.$/, '')
   const title = clean.charAt(0).toUpperCase() + clean.slice(1)
+  const photos = pickDistinctPhotos(title, seg.id, 4, 11)
   return {
     ...base,
     id: 'custom',
     label: title,
     desc: 'Tema personalizado do briefing',
     tag: seg.short,
-     photo: pickContextualPhoto(title, seg.id, 1, 11),
-    photos: [
-      pickContextualPhoto(title, seg.id, 1, 11),
-      pickContextualPhoto(title, seg.id, 2, 23),
-      pickContextualPhoto(title, seg.id, 3, 37),
-      pickContextualPhoto(title, seg.id, 4, 53),
-    ],
+    photo: photos[0],
+    photos,
     cats: ['ia'],
     hashtags: base.hashtags.slice(0, 3),
     posts: [
@@ -95,14 +91,14 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
         headline: `${title}: o cuidado que você merece.`,
         highlight: 'você merece.',
         sub: 'Atendimento especializado com foco em resultados reais e duradouros.',
-        photo: pickContextualPhoto(title, seg.id, 1, 11),
+        photo: photos[0],
       },
       {
         variant: 'list',
         headline: `${title}: por que vale a pena investir?`,
         highlight: 'vale a pena',
         bullets: ['Diagnóstico personalizado e individual', 'Resultado visível desde o primeiro momento', 'Equipe altamente especializada e qualificada'],
-        photo: pickContextualPhoto(title, seg.id, 2, 23),
+        photo: photos[1],
       },
       {
         variant: 'icons',
@@ -114,7 +110,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
           { icon: 'shield', label: 'Segurança total' },
         ],
         sub: 'Protocolos sob medida para transformar sua experiência.',
-        photo: pickContextualPhoto(title, seg.id, 3, 37),
+        photo: photos[2],
       },
       {
         variant: 'offer',
@@ -122,7 +118,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
         highlight: 'condições especiais',
         price: { label: 'A partir de', value: '89', cents: '90' },
         sub: 'Garanta seu horário e aproveite esta oportunidade.',
-        photo: pickContextualPhoto(title, seg.id, 4, 53),
+        photo: photos[3],
       },
     ],
     story: {
@@ -270,7 +266,7 @@ function postFromSeed(
 function storiesFor(theme: ThemeDef, seg: SegmentDef, p: GenParams, r: () => number): Creative[] {
   const s = theme.story
   const tone = p.tones[0] ?? 'profissional'
-  const photos = shuffle([theme.photo, ...(theme.photos ?? [])], r)
+  const photos = shuffle(Array.from(new Set([theme.photo, ...(theme.photos ?? [])])), r)
   const ph = (i: number) => photos[i % photos.length]
   const cta = ctaFor(seg, p.objective === 'outro' ? theme.objective : p.objective, r)
   const tags = hashtagsFor(theme, seg, p.city, r)
