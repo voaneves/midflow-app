@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "check:ai": "node --env-file-if-exists=.env server/tools/check-ai.ts",
     "check:image": "node --env-file-if-exists=.env server/tools/check-image.ts",
+    "check:budget": "node server/tools/check-budget.ts",
     "worker:dev": "wrangler dev --local",
     "worker:deploy": "wrangler deploy"
   },

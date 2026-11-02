@@ -1,19 +1,7 @@
-import { createHashRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, useLocation } from 'react-router-dom'
-import { AppLayout } from './components/AppLayout'
+import { createHashRouter, createMemoryRouter, Navigate, Outlet, RouterProvider, useLocation, type RouteObject } from 'react-router-dom'
 import { Toaster } from './components/ui'
 import { useApp } from './lib/store'
-import { Brand } from './pages/app/Brand'
-import { CalendarPage } from './pages/app/CalendarPage'
-import { Create } from './pages/app/create/Create'
-import { Dashboard } from './pages/app/Dashboard'
-import { Library } from './pages/app/Library'
-import { Plans } from './pages/app/Plans'
-import { Posts } from './pages/app/Posts'
-import { ReportsPage } from './pages/app/ReportsPage'
-import { Settings } from './pages/app/Settings'
-import { Auth } from './pages/Auth'
 import { Landing } from './pages/Landing'
-import Gallery from './dev/Gallery'
 
 function RequireAuth() {
   const user = useApp((s) => s.user)
@@ -22,33 +10,37 @@ function RequireAuth() {
   return <Outlet />
 }
 
-const routes = [
+/*
+ * Route-level code splitting: only the landing page ships in the entry bundle.
+ * React Router keeps the current screen on display while the next chunk loads (no blank flash).
+ */
+const routes: RouteObject[] = [
   { path: '/', element: <Landing /> },
-  { path: '/entrar', element: <Auth mode="login" /> },
-  { path: '/cadastro', element: <Auth mode="signup" /> },
+  { path: '/entrar', lazy: () => import('./pages/Auth').then((m) => ({ element: <m.Auth mode="login" /> })) },
+  { path: '/cadastro', lazy: () => import('./pages/Auth').then((m) => ({ element: <m.Auth mode="signup" /> })) },
   {
     element: <RequireAuth />,
     children: [
       {
         path: '/app',
-        element: <AppLayout />,
+        lazy: () => import('./components/AppLayout').then((m) => ({ Component: m.AppLayout })),
         children: [
-          { index: true, element: <Dashboard /> },
+          { index: true, lazy: () => import('./pages/app/Dashboard').then((m) => ({ Component: m.Dashboard })) },
           { path: 'criar', element: <Navigate to="/app/criar/1" replace /> },
-          { path: 'criar/:step', element: <Create /> },
-          { path: 'posts', element: <Posts /> },
-          { path: 'biblioteca', element: <Library /> },
-          { path: 'marca', element: <Brand /> },
-          { path: 'planos', element: <Plans /> },
-          { path: 'config', element: <Settings /> },
-          { path: 'calendario', element: <CalendarPage /> },
-          { path: 'relatorios', element: <ReportsPage /> },
+          { path: 'criar/:step', lazy: () => import('./pages/app/create/Create').then((m) => ({ Component: m.Create })) },
+          { path: 'posts', lazy: () => import('./pages/app/Posts').then((m) => ({ Component: m.Posts })) },
+          { path: 'biblioteca', lazy: () => import('./pages/app/Library').then((m) => ({ Component: m.Library })) },
+          { path: 'marca', lazy: () => import('./pages/app/Brand').then((m) => ({ Component: m.Brand })) },
+          { path: 'planos', lazy: () => import('./pages/app/Plans').then((m) => ({ Component: m.Plans })) },
+          { path: 'config', lazy: () => import('./pages/app/Settings').then((m) => ({ Component: m.Settings })) },
+          { path: 'calendario', lazy: () => import('./pages/app/CalendarPage').then((m) => ({ Component: m.CalendarPage })) },
+          { path: 'relatorios', lazy: () => import('./pages/app/ReportsPage').then((m) => ({ Component: m.ReportsPage })) },
         ],
       },
     ],
   },
   // dev-only: every style × every creative, for visual QA
-  ...(import.meta.env.DEV ? [{ path: '/dev/galeria', element: <Gallery /> }] : []),
+  ...(import.meta.env.DEV ? [{ path: '/dev/galeria', lazy: () => import('./dev/Gallery').then((m) => ({ Component: m.default })) }] : []),
   { path: '*', element: <Navigate to="/" replace /> },
 ]
 

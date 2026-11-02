@@ -1,4 +1,4 @@
-# Checks pull requests (main is checked by deploy.yml): lint + type-check + tests + build.
+# Checks pull requests (main is checked by deploy.yml): lint + type-check + tests + build + performance budget.
 name: CI
 
 on:
@@ -17,3 +17,4 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run check:budget

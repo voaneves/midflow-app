@@ -12,6 +12,7 @@ npm run dev              # http://localhost:5173 — front-end + /api
 npm run build && npm start   # production server on :3000
 npm test                 # quality-gate tests
 npm run eval             # real-model quality evaluation
+npm run check:budget     # after build: initial JS ≤ 180 KB gzip, CSS ≤ 30 KB, lazy chunk ≤ 60 KB
 ```
 
 **Production / POC operations (Portuguese): see [PRODUCAO.md](PRODUCAO.md)** — deploy (Docker), quality pipeline, POC metrics, security, what is still missing.
@@ -22,11 +23,13 @@ Shortcut: on the landing page click **Ver demonstração** to open the pre-fille
 
 - Every push to `main` runs `.github/workflows/deploy.yml`: checks → API as a Cloudflare Worker (`voaneves.com/midflow-app/api/*`, secrets from GitHub Secrets) → site on GitHub Pages (no secrets). Setup: PRODUCAO.md §3.1.
 - Alternative: one Node server / Docker for both — PRODUCAO.md §3.2.
-- `.github/workflows/ci.yml` runs lint, tests and build on pull requests.
+- `.github/workflows/ci.yml` runs lint, tests, build and the performance budget on pull requests.
 
 ## Stack
 
 Vite · React 19 · TypeScript · Tailwind CSS v4 · React Router 7 · Zustand (persisted to localStorage) · lucide-react · html-to-image + JSZip (PNG/ZIP export) · self-hosted fonts.
+Pages and the creative editor are code-split (route-level `lazy`); `html-to-image` and JSZip load on first export.
+Installable PWA: `public/manifest.webmanifest` + `public/icons/`, and a service worker generated at build time (`src/pwa/sw.js`, `pwa` plugin in `vite.config.ts`) that precaches the app shell for offline use and never caches `/api`.
 Motion is plain CSS (`src/index.css` → *Motion*) plus `src/components/motion.tsx` (`Reveal` on scroll, `CountUp`); everything respects `prefers-reduced-motion`.
 
 ## Where things are

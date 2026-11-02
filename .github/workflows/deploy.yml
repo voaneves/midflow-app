@@ -126,6 +126,7 @@ jobs:
           # Same-origin path of the API (the Worker route). Not a secret.
           VITE_API_URL: /midflow-app
         run: npm run build
+      - run: npm run check:budget
 
       # Hash routing → every path works; 404.html covers direct hits on unknown paths.
       - run: cp dist/index.html dist/404.html

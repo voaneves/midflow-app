@@ -2,7 +2,7 @@ import { CalendarDays, Copy, Download, FolderOpen, PenSquare, Search, Share2, Tr
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CreativeViewer } from '../../components/creative/CreativeViewer'
-import { Editor } from '../../components/creative/Editor'
+import { LazyEditor as Editor } from '../../components/creative/LazyEditor'
 import { CreativeTile, exportCreatives, jobFor, useLook } from '../../components/creative/parts'
 import { SocialPublishModal } from '../../components/creative/SocialPublishModal'
 import { ActionBar, Button, ChoiceGroup, EmptyState, IconButton, Input, toast } from '../../components/ui'
