@@ -37,7 +37,7 @@ import { Creative } from '../../../components/creative/Creative'
 import { ColorSwatches, useLook } from '../../../components/creative/parts'
 import { Button, ChoiceGroup, cx, Field, IconButton, InstagramIcon, Input, StoriesIcon, TabPanel, Tabs, Textarea, toast, useIsDesktop } from '../../../components/ui'
 import { derivePalette } from '../../../lib/color'
-import { BRIEFING_OBJECTIVES, SEGMENT_OPTIONS, segmentDef, STYLES, TONES } from '../../../lib/data'
+import { BRIEFING_OBJECTIVES, isExampleText, SEGMENT_BRIEFING_EXAMPLES, SEGMENT_OPTIONS, segmentDef, STYLES, TONES } from '../../../lib/data'
 import { copyText } from '../../../lib/export'
 import { useApp } from '../../../lib/store'
 import type { Palette, SegmentId, StyleId, ToneId } from '../../../lib/types'
@@ -167,18 +167,30 @@ export function Step1Briefing() {
     if (attempt) summaryRef.current?.focus()
   }, [attempt])
 
+  /** Example texts follow the segment; anything the user typed is kept. */
+  const examplesFor = (segId: SegmentId, current: typeof b, force: boolean) => {
+    const seg = segmentDef(segId)
+    const ex = SEGMENT_BRIEFING_EXAMPLES[segId]
+    const take = (field: 'about' | 'audience' | 'topics', value: string) => (force && !current[field].trim()) || isExampleText(field, current[field]) ? value : current[field]
+    return { about: take('about', seg.example), audience: take('audience', ex.audience), topics: take('topics', ex.topics), objectives: ex.objectives }
+  }
+
   const fillExample = () => {
-    const seg = segmentDef((b.segment || brand.segment || 'beleza') as SegmentId)
+    const segId = (b.segment || brand.segment || 'beleza') as SegmentId
+    const next = examplesFor(segId, b, true)
     set({
-      about: b.about || seg.example,
-      segment: b.segment || seg.id,
+      ...next,
+      segment: segId,
       location: b.location || brand.city || 'Palmas - TO',
-      objectives: b.objectives.length ? b.objectives : ['Atrair novos clientes', 'Fortalecer a marca'],
-      audience: b.audience || 'Adultos de 25 a 45 anos da região, que valorizam qualidade, atendimento próximo e praticidade.',
-      topics: b.topics || 'Dicas, bastidores, depoimentos de clientes, novidades e promoções.',
+      objectives: b.objectives.length ? b.objectives : next.objectives,
       tones: b.tones.length ? b.tones : ['profissional'],
     })
     toast('Dados de exemplo preenchidos. Ajuste o que quiser.', 'info')
+  }
+
+  const changeSegment = (segId: SegmentId) => {
+    const next = examplesFor(segId, b, false)
+    set({ segment: segId, about: next.about, audience: next.audience, topics: next.topics })
   }
 
   const submit = () => {
@@ -262,7 +274,7 @@ export function Step1Briefing() {
               required
               variant="chip"
               value={b.segment}
-              onChange={(v) => set({ segment: v as SegmentId })}
+              onChange={(v) => changeSegment(v as SegmentId)}
               error={err('segment')}
               options={SEGMENT_OPTIONS.map((s) => {
                 const I = SEGMENT_ICON[s.id] ?? MoreHorizontal

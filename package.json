@@ -17,6 +17,8 @@
     "check:ai": "node --env-file-if-exists=.env server/tools/check-ai.ts",
     "check:image": "node --env-file-if-exists=.env server/tools/check-image.ts",
     "check:budget": "node server/tools/check-budget.ts",
+    "photos:generate": "node --env-file-if-exists=.env server/tools/generate-example-photos.ts",
+    "e2e:a11y": "playwright test e2e/a11y.spec.ts --project=desktop-chrome",
     "worker:dev": "wrangler dev --local",
     "worker:deploy": "wrangler deploy"
   },

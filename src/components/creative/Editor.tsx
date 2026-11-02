@@ -580,7 +580,7 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
 
           {desktop ? (
             <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,420px)_1fr] gap-8 overflow-hidden p-6">
-              <div className="overflow-y-auto scroll-thin">
+              <div className="overflow-y-auto scroll-thin" tabIndex={0} role="region" aria-label="Prévia do criativo">
                 {canvas}
                 <p className="mt-3 text-center text-xs text-fg-subtle">Ctrl+S salva · Ctrl+Z desfaz · Esc fecha</p>
               </div>

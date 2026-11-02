@@ -106,8 +106,9 @@ function ProcessingTag({ width }: { width: number }) {
   if (width < 120) return null // calendar chips and other tiny thumbnails
   const short = width < 320
   return (
+    // Visual hint only: creatives are named by their own label, and this tag sits inside buttons (it must not change their name).
     <span
-      role="status"
+      aria-hidden
       style={{
         position: 'absolute',
         left: '50%',

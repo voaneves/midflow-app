@@ -62,6 +62,30 @@ export function readEvents(sinceMs = 0): AppEvent[] {
   }
 }
 
+const median = (xs: number[]) => {
+  if (!xs.length) return null
+  const v = [...xs].sort((a, b) => a - b)
+  const m = Math.floor(v.length / 2)
+  return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2)
+}
+
+/** Seconds from each business's first generation to its first download (usability: "tempo até baixar"). */
+function firstDownloadSeconds(events: AppEvent[]): number[] {
+  const firstGen = new Map<string, number>()
+  const out: number[] = []
+  const done = new Set<string>()
+  for (const e of [...events].sort((a, b) => a.at - b.at)) {
+    const brand = String(e.brandName || '')
+    if (!brand) continue
+    if (e.type === 'generation' && !firstGen.has(brand)) firstGen.set(brand, e.at)
+    if (e.type === 'download' && firstGen.has(brand) && !done.has(brand)) {
+      done.add(brand)
+      out.push(Math.round((e.at - firstGen.get(brand)!) / 1000))
+    }
+  }
+  return out
+}
+
 const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null)
 
 /** Numbers for the POC report (plan.md §8.7): quality, AI vs fallback, latency, ratings, downloads, edits. */
@@ -94,6 +118,10 @@ export function metrics(days = 30) {
       output: ai.reduce((s, e) => s + (Number(e.outputTokens) || 0), 0),
     },
     ratings: { count: ratings.length, average: avg(ratings) },
+    firstDownload: (() => {
+      const secs = firstDownloadSeconds(events)
+      return { businesses: secs.length, medianSeconds: median(secs), shareOfBusinesses: brands.size ? Math.round((secs.length / brands.size) * 100) : null }
+    })(),
     usage: {
       downloads: count('download'),
       edits: count('edit'),

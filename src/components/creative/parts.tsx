@@ -115,10 +115,12 @@ export function CreativeTile({
   return (
     <div className="group flex min-w-0 animate-rise flex-col gap-2" style={{ animationDelay: `${Math.min(index, 11) * 50}ms` }}>
       <div className={cx('relative overflow-hidden rounded-xl ring-offset-2 transition duration-200', selected ? 'ring-3 ring-brand-600' : 'ring-0')}>
+        <Creative c={c} style={look.style} palette={look.palette} format={look.format} brand={look.brand} label="" />
+        {/* Transparent layer over the artwork: the text drawn in the creative must not become the button's visible label (WCAG 2.5.3). */}
         <button
           type="button"
           {...(onSelect ? lp : {})}
-          className="block w-full text-left [-webkit-touch-callout:none]"
+          className="absolute inset-0 block w-full [-webkit-touch-callout:none]"
           onClick={() => {
             if (lp.consumed()) return
             if (selecting && onSelect) onSelect()
@@ -126,9 +128,7 @@ export function CreativeTile({
           }}
           aria-label={selecting ? `${selected ? 'Desmarcar' : 'Selecionar'} ${name}` : `Abrir ${name}`}
           aria-pressed={selecting ? !!selected : undefined}
-        >
-          <Creative c={c} style={look.style} palette={look.palette} format={look.format} brand={look.brand} label="" />
-        </button>
+        />
         {n !== undefined && (
           <span className="pointer-events-none absolute top-2 left-2 grid size-7 place-items-center rounded-full bg-white text-sm font-bold text-ink shadow" aria-hidden>
             {n}

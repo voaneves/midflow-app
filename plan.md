@@ -236,6 +236,18 @@ Suggested order of work inside Phase 3 (highest value first): Step 4 results + v
 
 ---
 
+### 10.1 Status (2026-11-02)
+
+| # | Status | Notes |
+|---|---|---|
+| 0–2 | Done | Baseline in `docs/ux-baseline.md`; component kit in `src/components/ui/`; app shell |
+| 3 | Done | Create flow, viewer, story player, mobile editor; real generation stages (no fake progress) |
+| 4 | Done | All screens mobile-first |
+| 5 | Done | Route code splitting (initial JS 161 KB gzip), offline PWA shell, icons, `npm run check:budget` in CI |
+| 6 | In progress | `npm run e2e:a11y`: 0 serious/critical axe issues on every route at 360/768/1280 and in the main dialogs. Usability kit: `docs/teste-de-usabilidade.md`; `firstDownload` metric in `/api/admin/metrics`. Example photo library regenerated (`npm run photos:generate`). **Open:** usability round with 5 businesses (SUS ≥ 80), dark mode decision |
+
+Also delivered alongside: AI images for every card (Cloudflare Workers AI, edge-cached per URL) with Pexels → catalog fallback; provider-neutral customer UI (vendor, model and quality method stay internal).
+
 ## 11. Risks & decisions to confirm
 
 1. **Dark mode** — worth doing now or after validation? (Plan treats it as optional in Phase 6.)
