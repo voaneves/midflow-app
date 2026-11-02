@@ -189,7 +189,7 @@ function toGeneration(params: GenerateParams, version: number, result: PackResul
     engine: result.engine,
     model: result.model,
     quality: { score: result.report.score, passed: result.report.passed, repaired: result.repaired },
-    aiError: result.engine === 'template' ? result.aiError : undefined,
+    aiError: result.engine === 'template' && !config.isProd ? result.aiError : undefined, // internal reason; logged server-side
     processingTimeMs: result.latencyMs,
   }
 }
@@ -204,7 +204,19 @@ const routes: Record<string, Handler> = {
   },
 
   /** Honest status of the AI: shown on the Settings page. Never exposes keys. */
-  'GET /api/status': async (_req, res) => {
+  /**
+   * Public: only whether AI is on. Details (vendor, model, errors) are internal — shown outside
+   * production or with the ADMIN_TOKEN (Authorization: Bearer … or ?token=…).
+   */
+  'GET /api/status': async (req, res, url) => {
+    if (config.isProd) {
+      try {
+        requireAdmin(req, url)
+      } catch {
+        sendJson(res, 200, { aiEnabled: aiEnabled(), imageAi: imageAiEnabled() })
+        return
+      }
+    }
     sendJson(res, 200, {
       aiEnabled: aiEnabled(),
       provider: config.ai.provider,
@@ -222,7 +234,8 @@ const routes: Record<string, Handler> = {
   },
 
   /** Real round-trip to the model. Reports failure as failure. */
-  'POST /api/test-ai': async (req, res) => {
+  'POST /api/test-ai': async (req, res, url) => {
+    if (config.isProd) requireAdmin(req, url)
     rateLimit(req, 'test', 20)
     if (!aiEnabled()) {
       sendJson(res, 200, {
@@ -281,7 +294,7 @@ const routes: Record<string, Handler> = {
     res.setHeader('X-Midflow-Image-AI', result.ai ? '1' : '0')
     if (result.credit) res.setHeader('X-Midflow-Photo-Credit', encodeURIComponent(result.credit))
     res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('X-Midflow-Image-Source', result.source)
+    if (!config.isProd) res.setHeader('X-Midflow-Image-Source', result.source) // vendor names stay internal
     // SVG artwork must never run scripts, even if opened directly.
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'")
     res.end(result.buffer)
@@ -327,7 +340,7 @@ const routes: Record<string, Handler> = {
 
     const result = await generatePack(params, version)
     if (result.engine === 'template' && config.ai.requireLlm) {
-      throw new HttpError(503, `A IA está indisponível no momento (${result.aiError}). Tente novamente em instantes.`)
+      throw new HttpError(503, config.isProd ? 'A IA está indisponível no momento. Tente novamente em instantes.' : `A IA está indisponível no momento (${result.aiError}). Tente novamente em instantes.`)
     }
     const generation = toGeneration(params, version, result)
 

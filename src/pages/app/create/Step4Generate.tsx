@@ -707,79 +707,100 @@ export function Step4Generate() {
   )
 }
 
-/**
- * Short verdict instead of the provider name: "Qualidade aprovada" when the AI output passed the quality gate.
- * Templates are never presented as AI (amber "Modelo de reserva"). Engine and score are in the dialog and for screen readers.
- */
+type Verdict = 'approved' | 'ai' | 'review' | 'fallback'
+
+/** One verdict for the badge and the dialog. Only AI output that passed the quality check is "approved". */
+function verdictOf(gen: Generation): Verdict {
+  const { isAI } = engineLabel(gen.engine)
+  if (!isAI) return 'fallback'
+  if (!gen.quality) return 'ai'
+  return gen.quality.passed ? 'approved' : 'review'
+}
+
+const VERDICT = {
+  approved: {
+    text: 'Qualidade aprovada',
+    Icon: ShieldCheck,
+    tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300',
+    box: 'bg-emerald-50 text-emerald-950',
+    icon: 'text-emerald-700',
+    detail: 'Criado com IA e revisado automaticamente antes de chegar até você.',
+  },
+  ai: {
+    text: 'Criado com IA',
+    Icon: Sparkles,
+    tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300',
+    box: 'bg-emerald-50 text-emerald-950',
+    icon: 'text-emerald-700',
+    detail: 'Criado com IA. Confira os textos antes de publicar.',
+  },
+  review: {
+    text: 'Revise antes de postar',
+    Icon: AlertTriangle,
+    tone: 'bg-warning-soft text-amber-950 ring-amber-300',
+    box: 'bg-warning-soft text-amber-950',
+    icon: 'text-amber-700',
+    detail: 'Criado com IA, mas alguns textos podem precisar de ajustes. Confira títulos e legendas antes de publicar.',
+  },
+  fallback: {
+    text: 'Modelo de reserva',
+    Icon: AlertTriangle,
+    tone: 'bg-warning-soft text-amber-950 ring-amber-300',
+    box: 'bg-warning-soft text-amber-950',
+    icon: 'text-amber-700',
+    detail: 'Nossa IA estava indisponível, então usamos modelos prontos para você não ficar esperando. Revise os textos antes de publicar ou crie uma nova versão.',
+  },
+} satisfies Record<Verdict, unknown>
+
+/** Short verdict, never the provider name. Templates are never presented as AI. Tap explains. */
 function EngineBadge({ gen, onExplain }: { gen: Generation; onExplain: () => void }) {
-  const { label, isAI } = engineLabel(gen.engine)
-  const q = gen.quality
-  const state = !isAI ? 'fallback' : q && !q.passed ? 'review' : q ? 'approved' : 'ai'
-  const ui = {
-    approved: { text: 'Qualidade aprovada', Icon: ShieldCheck, tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300', icon: 'text-emerald-700' },
-    ai: { text: 'Criado com IA', Icon: Sparkles, tone: 'bg-emerald-50 text-emerald-900 ring-emerald-300', icon: 'text-emerald-700' },
-    review: { text: 'Revise antes de postar', Icon: AlertTriangle, tone: 'bg-warning-soft text-amber-950 ring-amber-300', icon: 'text-amber-700' },
-    fallback: { text: 'Modelo de reserva', Icon: AlertTriangle, tone: 'bg-warning-soft text-amber-950 ring-amber-300', icon: 'text-amber-700' },
-  }[state]
+  const v = VERDICT[verdictOf(gen)]
   return (
     <button
       type="button"
       onClick={onExplain}
       aria-haspopup="dialog"
-      title={`${label}${q ? ` · nota ${q.score}/100` : ''}`}
-      className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition hover:brightness-95', ui.tone)}
+      className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition hover:brightness-95', v.tone)}
     >
-      <ui.Icon className={cx('size-4', ui.icon)} aria-hidden />
-      {ui.text}
-      <span className="sr-only">
-        . {label}
-        {q ? `, nota ${q.score} de 100` : ''}. Ver detalhes
-      </span>
+      <v.Icon className={cx('size-4', v.icon)} aria-hidden />
+      {v.text}
+      <span className="sr-only">. Ver detalhes</span>
     </button>
   )
 }
 
+/** What the customer gets, not how we check it (the quality method stays internal). */
 function QualityDialog({ open, onClose, gen }: { open: boolean; onClose: () => void; gen: Generation }) {
-  const { label, isAI } = engineLabel(gen.engine)
-  const checks = [
-    'Títulos, CTAs e textos dentro dos limites de caracteres',
-    'Palavra de destaque presente no título',
-    'Nome da marca citado nas legendas',
-    'Entre 5 e 12 hashtags únicas por post',
-    'Sem textos genéricos ou de preenchimento',
-    '4 posts e 4 Stories completos',
-    'Preços removidos quando não estão no seu briefing',
-  ]
+  const verdict = verdictOf(gen)
+  const v = VERDICT[verdict]
+  const showPromises = verdict === 'approved' || verdict === 'review'
   return (
-    <Dialog open={open} onClose={onClose} title="Como avaliamos este conteúdo" size="sm">
+    <Dialog open={open} onClose={onClose} title="Sobre este conteúdo" size="sm">
       <div className="grid gap-4 px-5 py-4 md:px-6">
-        <div className={cx('rounded-xl p-4 text-sm', isAI ? 'bg-emerald-50 text-emerald-950' : 'bg-warning-soft text-amber-950')}>
-          <p className="font-semibold">Motor: {label}</p>
-          <p className="mt-1">
-            {isAI
-              ? 'Textos escritos por inteligência artificial e revisados automaticamente.'
-              : 'A IA não estava disponível, então usamos modelos prontos. Revise os textos antes de publicar.'}
-          </p>
-          {gen.aiError && <p className="mt-1 text-xs">Motivo: {gen.aiError}</p>}
+        <div className={cx('flex gap-3 rounded-xl p-4 text-sm', v.box)}>
+          <v.Icon className={cx('mt-0.5 size-5 shrink-0', v.icon)} aria-hidden />
+          <div>
+            <p className="font-semibold">{v.text}</p>
+            <p className="mt-1">{v.detail}</p>
+          </div>
         </div>
-        {gen.quality ? (
+        {gen.quality && verdict !== 'fallback' && (
           <p className="text-sm">
             Nota de qualidade: <b className="text-title-sm">{gen.quality.score}/100</b>
-            {gen.quality.repaired ? ' (a IA corrigiu alguns pontos automaticamente)' : ''}.
           </p>
-        ) : (
-          <p className="text-sm text-fg-subtle">Esta versão não passou pelo controle de qualidade do servidor.</p>
         )}
-        <div>
-          <h3 className="mb-2 text-sm font-bold">O que a nota verifica</h3>
-          <ul className="grid gap-2 text-sm text-slate-800">
-            {checks.map((t) => (
-              <li key={t} className="flex gap-2">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden /> {t}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {showPromises && (
+          <div>
+            <h3 className="mb-2 text-sm font-bold">Em cada versão, você recebe</h3>
+            <ul className="grid gap-2 text-sm text-slate-800">
+              {['Textos no tamanho certo para o Instagram', 'O nome da sua marca e uma chamada para ação', 'Hashtags pensadas para o seu negócio', 'Nenhum preço que você não informou'].map((t) => (
+                <li key={t} className="flex gap-2">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden /> {t}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </Dialog>
   )

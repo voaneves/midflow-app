@@ -37,16 +37,18 @@ export async function sendFeedback(data: {
   }
 }
 
-/** Human label for the engine that produced a generation. Honest: templates are never called "AI". */
+/**
+ * Customer-facing engine label. Honest (templates are never called "AI") but provider-neutral:
+ * which model or vendor we use is not shown to customers.
+ */
 export function engineLabel(engine?: string): { label: string; isAI: boolean } {
   switch (engine) {
     case 'gemini':
-      return { label: 'IA: Google Gemini', isAI: true }
     case 'openai':
-      return { label: 'IA: OpenAI', isAI: true }
+      return { label: 'Criado com IA', isAI: true }
     case 'template':
-      return { label: 'Modelo de reserva (IA indisponível)', isAI: false }
+      return { label: 'Modelo de reserva', isAI: false }
     default:
-      return { label: 'Modelo offline (sem servidor)', isAI: false }
+      return { label: 'Modelo offline', isAI: false }
   }
 }

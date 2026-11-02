@@ -74,7 +74,8 @@ export function Settings() {
         </form>
       </Group>
 
-      <AIStatusCard />
+      {/* Engine diagnostics are for the team, not customers: dev builds only (production: /api/status with ADMIN_TOKEN). */}
+      {import.meta.env.DEV && <AIStatusCard />}
 
       <Group id="st-publish" icon={<Radio className="size-4" aria-hidden />} title="Publicação" hint="Usado como padrão no assistente de publicação e no calendário.">
         <div className="grid gap-5 p-4 sm:p-5">
@@ -184,7 +185,7 @@ interface AIStatus {
   lastError: string | null
 }
 
-/** Read-only, honest status of the AI engine. Keys are configured on the server (.env), never in the browser. */
+/** Dev-only diagnostics of the AI engine. Keys are configured on the server (.env), never in the browser. */
 function AIStatusCard() {
   const [status, setStatus] = useState<AIStatus | null | 'offline'>(null)
   const [testing, setTesting] = useState(false)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArrowRight, BookOpen, Building2, Calendar, Check, CheckCircle2, Clock, Droplet, Flame, Gem, Gift, Heart, Home, Leaf,
   PawPrint, Quote, Scissors, Send, Shield, Smile, Sparkles, Star, Sun, TrendingUp, User, Utensils, Zap,
@@ -64,6 +64,16 @@ export function Creative({ c, style, palette, format, brand, width, chrome = tru
 
   const H = baseHeight(c.kind, format)
   const k = w / BASE_W
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
+  const report = useCallback((key: string, busy: boolean) => {
+    setPending((prev) => {
+      if (prev.has(key) === busy) return prev
+      const next = new Set(prev)
+      if (busy) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }, [])
   return (
     <div
       ref={ref}
@@ -76,12 +86,55 @@ export function Creative({ c, style, palette, format, brand, width, chrome = tru
     >
       {w > 0 && (
         <div style={{ position: 'absolute', left: 0, top: 0, width: BASE_W, height: H, transform: `scale(${k})`, transformOrigin: '0 0' }}>
-          <CreativeCanvas c={c} style={c.style ?? style} palette={c.palette ?? palette} H={H} brand={brand} chrome={chrome} />
+          <PhotoStatus.Provider value={report}>
+            <CreativeCanvas c={c} style={c.style ?? style} palette={c.palette ?? palette} H={H} brand={brand} chrome={chrome} />
+          </PhotoStatus.Provider>
         </div>
       )}
+      {pending.size > 0 && <ProcessingTag width={w} />}
     </div>
   )
 }
+
+/**
+ * Photos report "still loading / retrying" to the surrounding <Creative>, which shows a tag at UI size.
+ * The tag lives outside the 1080-px canvas, so PNG exports (which render the canvas alone) never include it.
+ */
+const PhotoStatus = createContext<((key: string, busy: boolean) => void) | null>(null)
+
+function ProcessingTag({ width }: { width: number }) {
+  if (width < 120) return null // calendar chips and other tiny thumbnails
+  const short = width < 320
+  return (
+    <span
+      role="status"
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: '16%', // above the headline area of every layout
+        transform: 'translateX(-50%)',
+        whiteSpace: 'nowrap',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        maxWidth: '90%',
+        padding: short ? '4px 8px' : '6px 12px',
+        borderRadius: 999,
+        background: 'rgba(11, 26, 36, 0.78)',
+        color: '#fff',
+        font: `600 ${short ? 11 : 13}px/1.2 'Plus Jakarta Sans', sans-serif`,
+        textAlign: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none" aria-hidden />
+      {short ? 'Processando imagem…' : 'Sua imagem está sendo processada…'}
+    </span>
+  )
+}
+
+/** Retry delays for an /api/image that failed to load (AI still generating, network hiccup, timeout). */
+const RETRY_MS = [3000, 8000, 15000, 30000, 30000, 60000]
 
 /* ------------------------------------------------------------------ */
 
@@ -228,15 +281,23 @@ function Cta({ text, look }: { text: string; look: Look }) {
 
 function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
   const primaryUrl = photoUrl(id)
+  const report = useContext(PhotoStatus)
+  const key = useId()
+  const img = useRef<HTMLImageElement>(null)
   const [fallbackUsed, setFallbackUsed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [busy, setBusy] = useState(true)
   useEffect(() => {
     setFallbackUsed(false)
+    setAttempt(0)
+    setBusy(true)
   }, [id])
 
   let fallbackUrl: string | undefined
-  if (id && id.startsWith('/api/image')) {
+  const isApi = !!id && id.startsWith('/api/image')
+  if (isApi) {
     try {
-      const q = new URLSearchParams(id.split('?')[1] || '')
+      const q = new URLSearchParams(id!.split('?')[1] || '')
       const fb = q.get('fallback')
       if (fb && PHOTOS[fb]) fallbackUrl = PHOTOS[fb]
     } catch {
@@ -244,15 +305,51 @@ function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
     }
   }
 
-  const url = fallbackUsed && fallbackUrl ? fallbackUrl : primaryUrl
+  const base = fallbackUsed && fallbackUrl ? fallbackUrl : primaryUrl
+  // A retry gets its own URL so neither the browser nor the edge cache replays the failure.
+  const url = base && attempt > 0 && base.includes('/api/image') ? `${base}&r=${attempt}` : base
+
+  // Tell the wrapper while this photo is loading or retrying; show the tag only if it takes a moment (no flash for cached images).
+  useEffect(() => {
+    if (!report) return
+    if (!busy) return report(key, false)
+    const t = window.setTimeout(() => report(key, true), 600)
+    return () => {
+      window.clearTimeout(t)
+      report(key, false)
+    }
+  }, [busy, key, report])
+  // Already decoded before React attached onLoad (memory/HTTP cache).
+  useEffect(() => {
+    if (img.current?.complete && img.current.naturalWidth > 0) setBusy(false)
+  }, [url])
+  // Retry on a timer while it keeps failing.
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (!failed) return
+    const delay = RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]
+    const t = window.setTimeout(() => {
+      setFailed(false)
+      setAttempt((n) => n + 1)
+    }, delay)
+    return () => window.clearTimeout(t)
+  }, [failed, attempt])
+
   if (!url) return <div style={{ background: 'linear-gradient(135deg,#d9e6e2,#b8cfc8)', ...style }} />
   return (
     <img
+      ref={img}
       src={url}
       alt=""
       crossOrigin="anonymous"
+      onLoad={() => setBusy(false)}
       onError={() => {
+        // 1st: the local photo picked for this card. Then keep retrying the generated image.
         if (!fallbackUsed && fallbackUrl) setFallbackUsed(true)
+        else if (isApi || fallbackUsed) {
+          if (fallbackUsed) setFallbackUsed(false)
+          setFailed(true)
+        } else setBusy(false)
       }}
       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: photoFocus(id), display: 'block', ...style }}
     />
