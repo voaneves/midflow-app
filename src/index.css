@@ -95,7 +95,7 @@
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1.2);
   --ease-out-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
   --animate-fade-in: fade-in 0.2s ease both;
-  --animate-rise: rise 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-rise: rise 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-scale-in: scale-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-sheet-up: sheet-up 0.32s cubic-bezier(0.2, 0, 0, 1) both;
@@ -232,3 +232,8 @@ html[data-keyboard='open'] [data-hide-on-keyboard] { display: none !important; }
   .marquee-track, .text-gradient-animated, .animate-float, .skeleton { animation: none !important; }
   [data-reveal='hidden'] { opacity: 1; transform: none; }
 }
+
+/* Toasts stay readable above dialogs but must not cover a dialog's actions: phones show them near the top
+   (below the editor header), desktop moves them to the bottom-right corner. */
+@media (max-width: 1023px) { body:has(#root[inert]) .toaster { top: calc(var(--safe-top, 0px) + 64px); bottom: auto; } }
+@media (min-width: 1024px) { body:has(#root[inert]) .toaster { top: auto; bottom: 24px; } }

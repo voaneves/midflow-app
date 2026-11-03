@@ -13,11 +13,25 @@ export interface AIImage {
 }
 
 /** Last image error, shown by /api/status. */
-export const imageHealth: { lastOkAt?: number; lastErrorAt?: number; lastError?: string } = {}
+export const imageHealth: { lastOkAt?: number; lastErrorAt?: number; lastError?: string; lastCode?: ImageErrorCode } = {}
+
+/** Subset of the AI health error vocabulary that image failures use. */
+export type ImageErrorCode = 'invalid_key' | 'model_not_found' | 'rate_limit' | 'timeout' | 'provider_error'
+
+/** Maps an image failure message to a stable code. Auth/permission/token/account problems are 'invalid_key' (kind: config). */
+export function classifyImageError(message: string): ImageErrorCode {
+  const m = message.toLowerCase()
+  if (/token|permiss|autoriz|unauthor|forbidden|api key|chave|account id|\b(401|403)\b/.test(m)) return 'invalid_key'
+  if (/\b404\b|não encontrado|not found/.test(m)) return 'model_not_found'
+  if (/cota|quota|\b429\b/.test(m)) return 'rate_limit'
+  if (m.includes('tempo limite')) return 'timeout'
+  return 'provider_error'
+}
 
 function fail(message: string): null {
   imageHealth.lastErrorAt = Date.now()
   imageHealth.lastError = message
+  imageHealth.lastCode = classifyImageError(message)
   console.warn(`[MIDFLOW Image] ${message}`)
   return null
 }
@@ -98,6 +112,8 @@ async function gemini(prompt: string): Promise<AIImage | null> {
     })
     if (!res.ok) {
       if (res.status === 429) return fail(`Gemini ${model}: sem cota — imagens exigem faturamento ativo no Google.`)
+      if (res.status === 401 || res.status === 403) return fail(`Gemini ${model}: chave sem permissão (${res.status}).`)
+      if (res.status === 400) return fail(`Gemini ${model} respondeu 400 (chave de API ou requisição inválida)`)
       return fail(`Gemini ${model} respondeu ${res.status}`)
     }
     const json: any = await res.json()

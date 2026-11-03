@@ -136,6 +136,9 @@ export interface GenParams {
   seed: number
 }
 
+/** transient = temporary provider problem (worth retrying); daily_cap = daily AI budget reached; config = AI not configured */
+export type AiErrorKind = 'transient' | 'daily_cap' | 'config'
+
 export interface Generation {
   id: string
   createdAt: number
@@ -151,6 +154,10 @@ export interface Generation {
   quality?: { score: number; passed: boolean; repaired?: boolean }
   /** Why the AI was not used (only for template generations) */
   aiError?: string
+  /** Why the AI failed, as classified by the server (template generations only) */
+  aiErrorKind?: AiErrorKind
+  /** Set when the template answer is because the visitor has no account (the server never ran a paid model). */
+  aiErrorCode?: 'account_required'
   processingTimeMs?: number
 }
 

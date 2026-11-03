@@ -48,8 +48,8 @@ export function Posts() {
       <div className="mx-auto max-w-3xl">
         <EmptyState
           icon={<FileText className="size-6" />}
-          title="Nenhuma geração ainda"
-          text={`Crie seu primeiro conteúdo e as versões aparecem aqui. Você tem ${library.length} criativo(s) na Biblioteca.`}
+          title="Nenhum conteúdo gerado ainda"
+          text={`Crie seu primeiro conteúdo e as versões aparecem aqui. ${library.length === 0 ? 'Sua Biblioteca ainda está vazia.' : library.length === 1 ? 'Você tem 1 criativo na Biblioteca.' : `Você tem ${library.length} criativos na Biblioteca.`}`}
           action={
             <div className="flex flex-col justify-center gap-2 sm:flex-row">
               <Button onClick={() => nav('/app/criar/1')}>
@@ -87,7 +87,7 @@ export function Posts() {
           options={[
             { value: 'all', label: 'Todas' },
             { value: 'ai', label: 'Criadas com IA' },
-            { value: 'offline', label: 'Modelo de reserva' },
+            { value: 'offline', label: 'Versão padrão (sem IA)' },
           ]}
         />
       </div>

@@ -1,11 +1,13 @@
-import { ArrowLeft, ArrowRight, Lock, Mail, Sparkles, Store, User } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Lock, MailCheck, Mail, Sparkles, Store, User } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Creative } from '../components/creative/Creative'
-import { Button, Input, Label, Logo, Select } from '../components/ui'
+import { Button, Checkbox, FieldError, Input, Label, Logo, PasswordInput, Select } from '../components/ui'
+import { getBackend, isSupabaseConfigured } from '../lib/backend'
 import { derivePalette } from '../lib/color'
 import { SEGMENT_OPTIONS, segmentDef } from '../lib/data'
 import { generate } from '../lib/generator'
+import { markOAuthPending } from '../lib/oauthReturn'
 import { useApp } from '../lib/store'
 import type { PlanId, SegmentId } from '../lib/types'
 
@@ -41,35 +43,74 @@ function Visual() {
   )
 }
 
-export function Auth({ mode }: { mode: 'login' | 'signup' }) {
+export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
   const nav = useNavigate()
   const loc = useLocation() as { state?: { company?: string; plan?: PlanId; from?: string } }
-  const login = useApp((s) => s.login)
-  const signup = useApp((s) => s.signup)
+  const authSignIn = useApp((s) => s.authSignIn)
+  const authSignUp = useApp((s) => s.authSignUp)
   const loadDemo = useApp((s) => s.loadDemo)
   const setPlan = useApp((s) => s.setPlan)
-  const currentUser = useApp((s) => s.user)
-  const brand = useApp((s) => s.brand)
   const [name, setName] = useState('')
   const [company, setCompany] = useState(loc.state?.company ?? '')
   const [segment, setSegment] = useState<SegmentId | ''>('')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
   const [busy, setBusy] = useState(false)
+  const [consent, setConsent] = useState(false)
+  const [consentError, setConsentError] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const remote = isSupabaseConfigured()
 
-  const submit = (e: FormEvent) => {
+  // Password recovery needs a real account provider; the browser-only version has no passwords to reset.
+  if (mode === 'forgot' && !remote) return <Navigate to="/entrar" replace />
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (mode === 'signup' && !consent) {
+      setConsentError('Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.')
+      document.getElementById('su-consent')?.focus()
+      return
+    }
+    setConsentError('')
+    setError('')
+    setNotice('')
     setBusy(true)
-    setTimeout(() => {
+    try {
+      if (mode === 'forgot') {
+        const res = await (await getBackend()).auth.resetPassword(email.trim())
+        if (!res.ok) return setError(res.error)
+        return setNotice('Se existir uma conta com este e-mail, enviamos um link para criar uma nova senha. Confira também a caixa de spam.')
+      }
       if (mode === 'signup') {
-        signup({ name: name.trim() || 'Você', email }, company.trim() || 'Minha empresa', (segment || 'outro') as SegmentId)
-        if (loc.state?.plan) setPlan(loc.state.plan)
+        const res = await authSignUp({ name: name.trim() || 'Você', email: email.trim(), password: pass }, company.trim() || 'Minha empresa', (segment || 'outro') as SegmentId)
+        if (!res.ok) return setError(res.error)
+        if (res.needsConfirmation) return setNotice('Enviamos um link de confirmação para o seu e-mail. Confirme e depois entre.')
+        // Local accounts have no billing: the chosen plan is only a simulation. With a backend the plan comes from the subscription.
+        if (loc.state?.plan && !remote) setPlan(loc.state.plan)
         nav('/app/criar/1')
       } else {
-        login({ name: currentUser?.name ?? (email.split('@')[0] || 'Você'), email })
+        const res = await authSignIn(email.trim(), pass)
+        if (!res.ok) return setError(res.error)
         nav(loc.state?.from ?? '/app')
       }
-    }, 600)
+    } catch {
+      setError('Não foi possível concluir agora. Tente novamente em instantes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const google = async () => {
+    setError('')
+    setNotice('')
+    markOAuthPending()
+    try {
+      const res = await (await getBackend()).auth.signInWithOAuth('google')
+      if (!res.ok) setError(res.error)
+    } catch {
+      setError('Não foi possível abrir o login com Google agora.')
+    }
   }
 
   const demo = () => {
@@ -81,29 +122,38 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
     <div className="grid min-h-screen bg-white lg:grid-cols-[1fr_1.05fr]">
       <div className="flex flex-col px-5 py-8 sm:px-10">
         <div className="flex items-center justify-between">
-          <Link to="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-ink">
+          <Link to="/" className="-ml-2 inline-flex min-h-11 items-center gap-2 px-2 text-sm font-medium text-slate-600 hover:text-ink">
             <ArrowLeft className="size-4" /> Voltar
           </Link>
           <Logo className="text-lg lg:hidden" />
         </div>
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
-          <h1 className="text-3xl font-extrabold tracking-tight">{mode === 'signup' ? 'Crie sua conta grátis' : 'Bem-vindo de volta'}</h1>
-          <p className="mt-2 text-slate-500">{mode === 'signup' ? 'Leva menos de um minuto. Sem cartão de crédito.' : `Entre para continuar criando conteúdo${brand.name ? ` para ${brand.name}` : ''}.`}</p>
+          <h1 className="text-3xl font-extrabold tracking-tight">{mode === 'signup' ? 'Crie sua conta grátis' : mode === 'forgot' ? 'Recupere sua senha' : 'Bem-vindo de volta'}</h1>
+          <p className="mt-2 text-slate-500">
+            {mode === 'signup'
+              ? 'Leva menos de um minuto. Sem cartão de crédito.'
+              : mode === 'forgot'
+                ? 'Informe o e-mail da sua conta e enviamos um link para criar uma nova senha.'
+                : 'Entre para continuar criando conteúdo para o seu negócio.'}
+          </p>
 
-          <Button variant="secondary" className="mt-8 w-full" onClick={demo} type="button">
-            <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
-              <path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z" />
-              <path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1V17A11 11 0 0 0 12 23z" />
-              <path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9l3.7-2.8z" />
-              <path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z" />
-            </svg>
-            Continuar com Google
-          </Button>
-          <div className="my-6 flex items-center gap-3 text-xs text-slate-500">
-            <span className="h-px flex-1 bg-line" /> ou com e-mail <span className="h-px flex-1 bg-line" />
-          </div>
-
-          <form onSubmit={submit} className="grid gap-4">
+          {remote && mode !== 'forgot' && (
+            <>
+            <Button variant="secondary" className="mt-8 w-full" onClick={google} type="button">
+              <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+                <path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z" />
+                <path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1V17A11 11 0 0 0 12 23z" />
+                <path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9l3.7-2.8z" />
+                <path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z" />
+              </svg>
+              Continuar com Google
+            </Button>
+            <div className="my-6 flex items-center gap-3 text-xs text-slate-500">
+              <span className="h-px flex-1 bg-line" /> ou com e-mail <span className="h-px flex-1 bg-line" />
+            </div>
+            </>
+          )}
+          <form onSubmit={submit} className={remote && mode !== 'forgot' ? 'grid gap-4' : 'mt-8 grid gap-4'}>
             {mode === 'signup' && (
               <>
                 <div>
@@ -141,38 +191,104 @@ export function Auth({ mode }: { mode: 'login' | 'signup' }) {
               </Label>
               <Input id="au-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} icon={<Mail className="size-4" />} placeholder="voce@empresa.com.br" />
             </div>
-            <div>
-              <Label htmlFor="au-pass" required>
-                Senha
-              </Label>
-              <Input id="au-pass" type="password" required minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} icon={<Lock className="size-4" />} placeholder="Mínimo de 6 caracteres" />
-            </div>
+            {mode !== 'forgot' && (
+              <div>
+                <Label htmlFor="au-pass" required>
+                  Senha
+                </Label>
+                <PasswordInput
+                  id="au-pass"
+                  required
+                  minLength={6}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  value={pass}
+                  onChange={(e) => setPass(e.target.value)}
+                  icon={<Lock className="size-4" />}
+                  placeholder="Mínimo de 6 caracteres"
+                />
+                {mode === 'login' && remote && (
+                  <div className="mt-1 flex justify-end">
+                    <Link to="/esqueci-senha" className="-mr-2 inline-flex min-h-11 items-center px-2 text-sm font-semibold text-brand-700 hover:underline">
+                      Esqueci minha senha
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+            {mode === 'signup' && (
+              <div>
+                <Checkbox
+                  id="su-consent"
+                  checked={consent}
+                  onChange={(v) => {
+                    setConsent(v)
+                    if (v) setConsentError('')
+                  }}
+                  describedBy={consentError ? 'su-consent-err' : undefined}
+                  className="items-start py-1"
+                  label={
+                    <span>
+                      Li e aceito os{' '}
+                      <Link to="/termos" target="_blank" rel="noopener" className="font-semibold text-brand-700 underline">
+                        Termos de Uso
+                      </Link>{' '}
+                      e a{' '}
+                      <Link to="/privacidade" target="_blank" rel="noopener" className="font-semibold text-brand-700 underline">
+                        Política de Privacidade
+                      </Link>
+                      . <span className="text-danger" aria-hidden>*</span>
+                    </span>
+                  }
+                />
+                <div role="alert">{consentError && <FieldError id="su-consent-err">{consentError}</FieldError>}</div>
+                
+              </div>
+            )}
+            <div role="alert">{error && <FieldError>{error}</FieldError>}</div>
+            {notice && (
+              <p role="status" className="flex items-start gap-2 rounded-xl bg-brand-50 p-3 text-sm font-medium text-brand-900">
+                <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden /> {notice}
+              </p>
+            )}
             <Button type="submit" size="lg" loading={busy} className="mt-2 w-full">
-              {mode === 'signup' ? 'Criar conta e começar' : 'Entrar'} <ArrowRight className="size-5" />
+              {mode === 'signup' ? 'Criar conta e começar' : mode === 'forgot' ? 'Enviar link de recuperação' : 'Entrar'} <ArrowRight className="size-5" />
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
-            {mode === 'signup' ? (
+          <p className="mt-4 text-center text-sm text-slate-600">
+            {mode === 'forgot' ? (
+              <>
+                Lembrou a senha?{' '}
+                <Link to="/entrar" className="inline-block px-1 py-3 font-semibold text-brand-700">
+                  Voltar para entrar
+                </Link>
+              </>
+            ) : mode === 'signup' ? (
               <>
                 Já tem conta?{' '}
-                <Link to="/entrar" className="font-semibold text-brand-700">
+                <Link to="/entrar" className="inline-block px-1 py-3 font-semibold text-brand-700">
                   Entrar
                 </Link>
               </>
             ) : (
               <>
                 Ainda não tem conta?{' '}
-                <Link to="/cadastro" className="font-semibold text-brand-700">
+                <Link to="/cadastro" className="inline-block px-1 py-3 font-semibold text-brand-700">
                   Criar conta grátis
                 </Link>
               </>
             )}
           </p>
-          <button onClick={demo} className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100">
+          {mode !== 'forgot' && (
+          <button type="button" onClick={demo} className="mx-auto mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100">
             <Sparkles className="size-4" /> Explorar a conta de demonstração
           </button>
-          <p className="mt-6 text-center text-xs text-slate-500">Protótipo: nenhum dado sai do seu navegador.</p>
+          )}
+          <p className="mt-6 text-center text-xs text-slate-500">
+            {remote
+              ? 'Sua conta e suas criações ficam guardadas com segurança na nuvem. O texto do briefing é enviado ao servidor para gerar o conteúdo.'
+              : 'Nesta versão, a conta e os dados ficam guardados apenas neste navegador. O texto do briefing só é enviado ao servidor para gerar o conteúdo.'}
+          </p>
         </div>
       </div>
       <Visual />

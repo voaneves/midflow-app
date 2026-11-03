@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { DATA_DIR, PHOTOS_DIR } from './paths.ts'
 import { generateAIImage } from './ai/image.ts'
+import { config, imageUrlSecret } from './config.ts'
 import { fetchStockPhoto } from './pixabay.ts'
 
 const CACHE_DIR = path.join(DATA_DIR, 'image-cache')
@@ -43,6 +44,8 @@ export interface ImageGenOptions {
   /** Editorial photo chosen for this card when the generation was built (unique per generation). */
   editorial?: string
   forceAi?: boolean
+  /** Server-side gate checked on a cache miss just before the image model is called (daily cap). false = use the stock fallback. */
+  aiGate?: () => boolean | Promise<boolean>
 }
 
 /**
@@ -301,8 +304,86 @@ export function buildDetailedImagePrompt(opts: ImageGenOptions): string {
   return `${baseSubject}. ${framing}. Style: High-end editorial commercial photography for Instagram (${opts.style || 'modern'} aesthetic), natural studio lighting, shallow depth of field, 85mm lens, rich authentic colors, photorealistic 8k, no text, no letters, no words, no watermark.`
 }
 
+/* ---------------- signed AI image URLs ----------------
+ * `/api/image?ai=1` spends the paid image model. Anyone can craft such a URL, so the server only honors `ai=1`
+ * when the query carries `sig`, an HMAC-SHA256 (IMAGE_URL_SECRET) over the canonical query. Only the server signs:
+ * the secret never leaves it, and the browser merely replays URLs it received from /api/generate or /api/generate-image. */
+
+/** The query without `sig`, sorted by key, re-encoded the same way on both sides. */
+export function canonicalImageQuery(params: URLSearchParams): string {
+  const entries = [...params.entries()]
+    .filter(([k]) => k !== 'sig')
+    .sort(([ak, av], [bk, bv]) => (ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : av > bv ? 1 : 0))
+  return new URLSearchParams(entries).toString()
+}
+
+/** base64url(HMAC-SHA256(secret, canonical query)). */
+export function signImageQuery(params: URLSearchParams, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(canonicalImageQuery(params)).digest('base64url')
+}
+
+/** Timing-safe check of `sig` against the query. */
+export function verifyImageSig(params: URLSearchParams, secret: string): boolean {
+  const sig = params.get('sig')
+  if (!sig) return false
+  const expected = Buffer.from(signImageQuery(params, secret))
+  const given = Buffer.from(sig)
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected)
+}
+
+/**
+ * The one spelling of an image query this server emits: the canonical query, then `&sig=` when there is a signature.
+ * Anything else (reordered, re-encoded, extra or repeated parameters) is a different URL for the cache, so it must not
+ * be able to reach the paid model with a valid signature (that would let one signed URL fan out into unlimited cache misses).
+ */
+export function canonicalImageSearch(params: URLSearchParams): string {
+  const query = canonicalImageQuery(params)
+  const sig = params.get('sig')
+  return sig ? `${query}&sig=${encodeURIComponent(sig)}` : query
+}
+
+/** True when the raw query string (with or without the leading "?") is byte-for-byte the canonical spelling. */
+export function isCanonicalImageSearch(rawSearch: string, params: URLSearchParams): boolean {
+  return rawSearch.replace(/^\?/, '') === canonicalImageSearch(params)
+}
+
+/**
+ * Edge-cache key for GET /api/image: the request URL with its query in canonical spelling, so reordered or re-encoded
+ * variants of the same image share one entry. `cacheable` is false for a signed URL that is not canonical: the route answers
+ * those with the stock fallback, which must not be stored under the key of the real (AI) image.
+ */
+export function imageCacheKey(url: URL): { key: string; cacheable: boolean } {
+  const canonical = canonicalImageSearch(url.searchParams)
+  const key = `${url.origin}${url.pathname}?${canonical}`
+  return { key, cacheable: !url.searchParams.has('sig') || isCanonicalImageSearch(url.search, url.searchParams) }
+}
+
+let warnedUnsignedProd = false
+function warnUnsignedProd() {
+  if (warnedUnsignedProd) return
+  warnedUnsignedProd = true
+  console.warn('[MIDFLOW] IMAGE_URL_SECRET is not set: AI card images are disabled in production (stock photos are served instead).')
+}
+
+/**
+ * Whether a `/api/image` request may spend the paid image model: `ai=1` plus a valid signature, and the raw query string
+ * in exactly the canonical spelling (`rawSearch` is the query as received, see isCanonicalImageSearch).
+ * Without IMAGE_URL_SECRET: development accepts a raw `ai=1`; production never does (and warns once).
+ */
+export function aiImageAuthorized(params: URLSearchParams, rawSearch: string): boolean {
+  if (params.get('ai') !== '1') return false
+  const secret = imageUrlSecret()
+  if (secret) return verifyImageSig(params, secret) && isCanonicalImageSearch(rawSearch, params)
+  if (config.isProd) {
+    warnUnsignedProd()
+    return false
+  }
+  return true
+}
+
 /**
  * Constrói a URL `/api/image?...` que o frontend usa nos componentes `<Creative />`.
+ * Requests for an AI image are signed here (the only place that builds them), see aiImageAuthorized().
  */
 export function buildApiImageUrl(opts: ImageGenOptions): string {
   const params = new URLSearchParams()
@@ -322,8 +403,19 @@ export function buildApiImageUrl(opts: ImageGenOptions): string {
   if (opts.light) params.set('light', opts.light)
   if (opts.fallback) params.set('fallback', opts.fallback)
   if (opts.editorial) params.set('photo', opts.editorial)
-  if (opts.forceAi) params.set('ai', '1')
-  return `/api/image?${params.toString()}`
+  if (opts.forceAi) {
+    const secret = imageUrlSecret()
+    if (secret) {
+      params.set('ai', '1')
+      // The URL is emitted in canonical order with sig last: aiImageAuthorized() accepts no other spelling.
+      return `/api/image?${canonicalImageQuery(params)}&sig=${signImageQuery(params, secret)}`
+    } else if (!config.isProd) {
+      params.set('ai', '1')
+    } else {
+      warnUnsignedProd()
+    }
+  }
+  return `/api/image?${canonicalImageQuery(params)}`
 }
 
 /**
@@ -595,7 +687,7 @@ export async function resolveContextualImage(opts: ImageGenOptions): Promise<Res
   }
 
   // 2. AI image
-  if (opts.forceAi) {
+  if (opts.forceAi && (!opts.aiGate || (await opts.aiGate()))) {
     const aiImg = await generateAIImage(fullPrompt, opts.kind)
     if (aiImg) {
       const entry = { buffer: aiImg.buffer, mimeType: aiImg.mimeType }

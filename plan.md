@@ -56,7 +56,7 @@ We follow established platform guidelines and copy *patterns* (not visuals) from
 | Accessibility | **WCAG 2.2 AA**, WAI-ARIA Authoring Practices, eMAG (Brazilian gov. guideline) | Contrast ≥ 4.5:1, targets ≥ 44 px, full keyboard paths, screen-reader labels in pt-BR |
 | Performance | Core Web Vitals (LCP < 2.5 s, INP < 200 ms, CLS < 0.1) on a mid-range Android over 4G | Route-level code splitting, image `srcset`, no layout shift on fonts/images |
 
-Non-negotiable invariants from `AGENTS.md` still apply: creatives are only restyled inside `Creative.tsx` at 1080-px coordinates (WYSIWYG), engine status (`ai` vs `fallback`) is always visible, `prefers-reduced-motion` is respected everywhere.
+Non-negotiable product invariants still apply: creatives are only restyled inside `Creative.tsx` at 1080-px coordinates (WYSIWYG), engine status (`ai` vs `fallback`) is always visible, `prefers-reduced-motion` is respected everywhere.
 
 ---
 
@@ -236,17 +236,41 @@ Suggested order of work inside Phase 3 (highest value first): Step 4 results + v
 
 ---
 
-### 10.1 Status (2026-11-02)
+### 10.1 Status (2026-11-03)
+
+UX phases (this plan):
 
 | # | Status | Notes |
 |---|---|---|
 | 0–2 | Done | Baseline in `docs/ux-baseline.md`; component kit in `src/components/ui/`; app shell |
 | 3 | Done | Create flow, viewer, story player, mobile editor; real generation stages (no fake progress) |
 | 4 | Done | All screens mobile-first |
-| 5 | Done | Route code splitting (initial JS 161 KB gzip), offline PWA shell, icons, `npm run check:budget` in CI |
-| 6 | In progress | `npm run e2e:a11y`: 0 serious/critical axe issues on every route at 360/768/1280 and in the main dialogs. Usability kit: `docs/teste-de-usabilidade.md`; `firstDownload` metric in `/api/admin/metrics`. Example photo library regenerated (`npm run photos:generate`). **Open:** usability round with 5 businesses (SUS ≥ 80), dark mode decision |
+| 5 | Done | Route code splitting, offline PWA shell, icons, `npm run check:budget` in CI and in the deploy |
+| 6 | In progress | `npm run e2e:a11y`: 0 serious/critical axe issues on every route at 360/768/1280 and in the main dialogs. Usability kit: `docs/teste-de-usabilidade.md`; `firstDownload` metric in `/api/admin/metrics`. **Open:** usability round with 5 businesses (SUS ≥ 80), dark mode decision |
 
-Also delivered alongside: AI images for every card (Cloudflare Workers AI, edge-cached per URL) with Pexels → catalog fallback; provider-neutral customer UI (vendor, model and quality method stay internal).
+Work delivered alongside the UX phases (see `docs/backend-integration.md` and `PRODUCAO.md` for details):
+
+| Area | Status | Notes |
+|---|---|---|
+| AI pipeline and images | Done | Quality gate with repair round; AI images for every card (Cloudflare Workers AI, edge-cached per URL); stock fallback Pixabay, then the internal catalog; honest `ai` / `template` reporting; provider-neutral customer UI |
+| API hardening | Done | Input validation on every route, body limits, `TRUST_PROXY` modes (`cloudflare`, hop count, socket), `ADMIN_TOKEN` only as Bearer with a 32-character minimum, no tokens in URLs, failed admin-token attempts rate limited |
+| Edge limits | Done | Cloudflare Worker with Workers Rate Limiting (`RL_GENERATE`, `RL_IMAGE`, `RL_SENSITIVE`) and Durable Object counters for exact global daily AI caps; fail-open when a binding is missing |
+| Legal pages | Done, pending review | Privacy (`#/privacidade`) and Terms (`#/termos`) are published with marked fields still to fill in (company, CNPJ, DPO, retention, billing terms, venue) |
+| Supabase auth and sync | Done | E-mail and password sign-in, Google sign-in, password recovery (`#/esqueci-senha`, `#/nova-senha`), brand, generation and library sync with row-level security, column-level grants, asymmetric JWT verification |
+| Stripe billing | Done | Checkout for monthly and annual prices, signed and idempotent webhooks, server-side price mapping, plan quotas enforced with atomic reservation (`402 quota_exceeded`); no customer portal route yet |
+| Account deletion | Done | LGPD flow with confirmation, Stripe cancellation before deletion, last-admin guard |
+| RBAC and staff panel | Done | `admin` and `editor` roles in `staff_members`, break-glass `ADMIN_TOKEN`, staff panel at `#/painel` with Reviews, AI health, Metrics and Team tabs (the last three admin only) |
+| Review queue | Done | Customer requests from the generation screen, assignment rules for editors, revisions, audit trail, "Minhas revisões" for customers |
+| AI health dashboard | Done | Per-attempt events without prompts or keys, success and fallback rates, latency percentiles, daily cap usage, last error, retention pruning |
+| Security pass | Done | Server-only secrets, CSP and framing headers, pinned `search_path` on database functions, stale Stripe event handling, log redaction |
+| Supply-chain hardening | Done | Pinned action SHAs, `npm ci --ignore-scripts`, least-privilege job permissions, `production` environment with manual approval for secrets and deploys |
+
+**Remaining (owner tasks):**
+
+1. Go-live setup, in the order of `PRODUCAO.md` §9: GitHub environments and reviewers, Supabase project and migrations, Stripe products and webhook, Cloudflare rules, Google key restrictions and budget.
+2. Legal review and filling in the fields in `/privacidade` and `/termos` (`PRODUCAO.md` §12).
+3. Live end-to-end test with real Supabase and Stripe accounts in test mode, then one real small purchase.
+4. Usability round with five businesses on their own phones (SUS ≥ 80), and the dark mode decision.
 
 ## 11. Risks & decisions to confirm
 

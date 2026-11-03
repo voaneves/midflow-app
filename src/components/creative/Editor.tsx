@@ -24,8 +24,10 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { derivePalette } from '../../lib/color'
-import { generateCustomImageWithAI, rewriteCreativeWithAI } from '../../lib/aiService'
+import { DAILY_IMAGE_LIMIT_MESSAGE, DAILY_REWRITE_LIMIT_MESSAGE, generateCustomImageWithAI, rewriteCreativeWithAI } from '../../lib/aiService'
+import { ACCOUNT_REQUIRED_MESSAGE, GenerateError } from '../../lib/generation'
 import { segmentDef, STYLES } from '../../lib/data'
+import { ImageError, preparePhoto } from '../../lib/image'
 import { COPY_LIMITS as L } from '../../lib/limits'
 import { PHOTOS, photoUrl } from '../../lib/photos'
 import { useApp } from '../../lib/store'
@@ -33,7 +35,7 @@ import { track } from '../../lib/telemetry'
 import type { Creative as CreativeT, Variant } from '../../lib/types'
 import { Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, IconButton, Input, Select, Textarea, toast, useIsDesktop } from '../ui'
 import { Creative } from './Creative'
-import { exportCreatives, jobFor, readFile, type Look } from './helpers'
+import { exportCreatives, jobFor, type Look } from './helpers'
 
 interface Props {
   open: boolean
@@ -173,9 +175,19 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
       })
       setSeed(seed + 1)
       const ai = res.engine === 'gemini' || res.engine === 'openai'
-      toast(ai ? 'Texto reescrito com IA' : 'Texto reescrito com o modelo de reserva (IA indisponível)', ai ? 'ok' : 'info')
+      toast(
+        ai
+          ? 'Texto reescrito com IA'
+          : res.code === 'account_required'
+            ? `${ACCOUNT_REQUIRED_MESSAGE} Reescrevemos com a versão padrão.`
+            : res.aiErrorKind === 'daily_cap'
+              ? DAILY_REWRITE_LIMIT_MESSAGE
+              : 'Texto reescrito com a versão padrão (IA indisponível no momento)',
+        ai ? 'ok' : 'info',
+      )
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') toast('Reescrita cancelada', 'info')
+      else if (e instanceof GenerateError) toast(e.message, 'error')
       else toast('Não foi possível reescrever agora.', 'error')
     } finally {
       setRewriting(null)
@@ -187,7 +199,7 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
     const ctl = new AbortController()
     setGeneratingImg(ctl)
     try {
-      const url = await generateCustomImageWithAI({
+      const img = await generateCustomImageWithAI({
         prompt: imgPrompt.trim() || undefined,
         headline: c.headline,
         segment: segment || 'beleza',
@@ -200,12 +212,14 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
         palette: activePalette,
         signal: ctl.signal,
       })
-      if (url) {
-        set({ photo: url })
-        toast('Nova imagem aplicada')
+      if (img) {
+        set({ photo: img.url })
+        if (img.notice === 'daily_user_limit') toast(DAILY_IMAGE_LIMIT_MESSAGE, 'info')
+        else toast('Nova imagem aplicada')
       } else toast('Não foi possível gerar a imagem agora. As fotos do catálogo continuam disponíveis.', 'error')
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') toast('Geração de imagem cancelada', 'info')
+      else if (e instanceof GenerateError) toast(e.message, 'error')
     } finally {
       setGeneratingImg(null)
     }
@@ -226,8 +240,15 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
             accept="image/*"
             className="sr-only"
             onChange={async (e) => {
-              const f = e.target.files?.[0]
-              if (f) set({ [field]: await readFile(f) })
+              const input = e.target
+              const f = input.files?.[0]
+              if (!f) return
+              try {
+                set({ [field]: await preparePhoto(f) })
+              } catch (err) {
+                toast(err instanceof ImageError ? err.message : 'Não foi possível usar essa foto. Tente outra imagem.', 'error')
+              }
+              input.value = ''
             }}
           />
         </label>
@@ -446,6 +467,12 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
         </div>
         {photoPicker('photo', c.variant === 'beforeafter' ? 'Foto “antes”' : 'Catálogo e upload')}
         {c.variant === 'beforeafter' && photoPicker('photo2', 'Foto “depois”')}
+        <p className="text-xs text-slate-600">
+          Fotos de reserva:{' '}
+          <a href="https://pixabay.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-brand-800">
+            Pixabay
+          </a>
+        </p>
         {(c.style || c.palette) && (
           <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => set({ style: undefined, palette: undefined })}>
             <RotateCcw className="size-4" aria-hidden /> Voltar ao visual da geração
@@ -545,7 +572,7 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
 
   return (
     <>
-      <Dialog open={open} onClose={requestClose} label={title} size="full" mobile="fullscreen" bare bodyClassName="flex flex-col overflow-hidden">
+      <Dialog open={open} onClose={requestClose} label={title} size="full" mobile="fullscreen" bare className="md:h-[min(780px,90dvh)]" bodyClassName="flex flex-col overflow-hidden">
         <div
           className="flex h-full min-h-0 flex-col"
           onKeyDown={(e) => {

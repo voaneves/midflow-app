@@ -7,21 +7,39 @@ interface SEOProps {
   ogType?: string
   ogImage?: string
   jsonLd?: Record<string, unknown> | Record<string, unknown>[]
+  /** Keeps the page out of search results (private screens such as the staff panel). */
+  noindex?: boolean
 }
 
 const DEFAULT_TITLE = 'MIDFLOW — Crie Posts e Stories Profissionais com IA em Minutos'
 const DEFAULT_DESC =
   'Estúdio de conteúdo com Inteligência Artificial para pequenos e médios negócios. Transforme um briefing curto em posts para feed, sequências de Stories, legendas e hashtags prontos para o Instagram.'
-const DEFAULT_IMAGE = 'https://midflow.com.br/midflow-logo.png'
+/**
+ * Public origin of the site, used for canonical and Open Graph URLs.
+ * This is the final production origin (GitHub Pages); keep it in sync with the URLs in
+ * index.html, public/sitemap.xml and public/robots.txt.
+ */
+export const SITE_URL = 'https://voaneves.com/midflow-app/'
+const DEFAULT_IMAGE = `${SITE_URL}og-image.png`
 
 export function SEOHead({
   title = DEFAULT_TITLE,
   description = DEFAULT_DESC,
-  canonical = 'https://midflow.com.br/',
+  canonical = SITE_URL,
   ogType = 'website',
   ogImage = DEFAULT_IMAGE,
   jsonLd,
+  noindex,
 }: SEOProps) {
+  useEffect(() => {
+    if (!noindex) return
+    const el = document.createElement('meta')
+    el.name = 'robots'
+    el.content = 'noindex, nofollow'
+    document.head.appendChild(el)
+    return () => el.remove()
+  }, [noindex])
+
   useEffect(() => {
     // 1. Title
     document.title = title

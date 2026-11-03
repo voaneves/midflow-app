@@ -6,13 +6,25 @@
 #   3. site    → GitHub Pages (voaneves.com/midflow-app). The build contains NO keys;
 #                it just calls /midflow-app/api on the same domain.
 #
-# GitHub → Settings → Secrets and variables → Actions → Secrets (one-time):
+# GitHub → Settings → Environments → "production" (one-time): add yourself as a
+# required reviewer and store the secrets below as environment secrets, so a run
+# can only read them after a manual approval. Also add a required reviewer to the
+# "github-pages" environment used by the site job.
+#
+# Secrets (environment "production"):
 #   CLOUDFLARE_API_TOKEN   token to deploy the Worker (template "Edit Cloudflare Workers")
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare account ID (also used for Workers AI images)
 #   GEMINI_API_KEY         Google AI Studio key — text
 #   CF_AI_TOKEN            Cloudflare token with "Workers AI" permission — images
-#   ADMIN_TOKEN            any long random string — protects /api/admin/metrics
+#   ADMIN_TOKEN            random string, at least 32 chars — break-glass admin access
+#   IMAGE_URL_SECRET       random string, at least 32 chars — signs AI image URLs (without it, cards use stock photos)
 #   PIXABAY_API_KEY        optional — stock photo fallback (pixabay.com/api/docs)
+#   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET   optional — accounts, review queue, staff roles, quotas
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET         optional — billing
+#
+# Repository Variables (Settings → Secrets and variables → Actions → Variables), all optional and not secret:
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_BILLING_ENABLED   baked into the site build
+#   SUPABASE_URL (falls back to VITE_SUPABASE_URL), STRIPE_PRICE_* and APP_URL   copied to the Worker
 #
 # Without CLOUDFLARE_API_TOKEN the api job is skipped (with a warning) and the site
 # still deploys; it then runs as an offline demo, clearly labeled in the app.
@@ -23,10 +35,8 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# No token permissions at workflow level; each job declares only what it needs.
+permissions: {}
 
 concurrency:
   group: deploy
@@ -35,13 +45,18 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # --ignore-scripts: no dependency needs an install hook (see ci.yml).
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm test
       - run: npm run typecheck
@@ -49,6 +64,10 @@ jobs:
   api:
     needs: checks
     runs-on: ubuntu-24.04
+    # Secrets live in the "production" environment, which requires a manual approval.
+    environment: production
+    permissions:
+      contents: read
     steps:
       - name: Check Cloudflare credentials
         id: cf
@@ -62,19 +81,22 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: steps.cf.outputs.ready == 'true'
-      - uses: actions/setup-node@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.cf.outputs.ready == 'true'
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         if: steps.cf.outputs.ready == 'true'
 
       - name: Deploy Worker
         if: steps.cf.outputs.ready == 'true'
-        run: npx wrangler deploy
+        # GIT_SHA is a plain (non-secret) Worker var that identifies the deployed build.
+        run: npx wrangler deploy --var "GIT_SHA:${GITHUB_SHA}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -85,7 +107,13 @@ jobs:
         if: steps.cf.outputs.ready == 'true'
         run: |
           node -e '
-            const names = ["GEMINI_API_KEY", "CF_AI_ACCOUNT_ID", "CF_AI_TOKEN", "PIXABAY_API_KEY", "ADMIN_TOKEN"]
+            const names = [
+              "GEMINI_API_KEY", "CF_AI_ACCOUNT_ID", "CF_AI_TOKEN", "PIXABAY_API_KEY", "ADMIN_TOKEN",
+              "IMAGE_URL_SECRET", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_JWT_SECRET",
+              "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+              "STRIPE_PRICE_START", "STRIPE_PRICE_PRO", "STRIPE_PRICE_BUSINESS",
+              "STRIPE_PRICE_START_ANNUAL", "STRIPE_PRICE_PRO_ANNUAL", "STRIPE_PRICE_BUSINESS_ANNUAL", "APP_URL"
+            ]
             const out = {}
             for (const n of names) {
               const v = (process.env[n] || "").trim()
@@ -104,16 +132,31 @@ jobs:
           CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          IMAGE_URL_SECRET: ${{ secrets.IMAGE_URL_SECRET }}
+          # Optional backend: accounts, review queue, billing. Empty values are skipped above.
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_PRICE_START: ${{ vars.STRIPE_PRICE_START }}
+          STRIPE_PRICE_PRO: ${{ vars.STRIPE_PRICE_PRO }}
+          STRIPE_PRICE_BUSINESS: ${{ vars.STRIPE_PRICE_BUSINESS }}
+          STRIPE_PRICE_START_ANNUAL: ${{ vars.STRIPE_PRICE_START_ANNUAL }}
+          STRIPE_PRICE_PRO_ANNUAL: ${{ vars.STRIPE_PRICE_PRO_ANNUAL }}
+          STRIPE_PRICE_BUSINESS_ANNUAL: ${{ vars.STRIPE_PRICE_BUSINESS_ANNUAL }}
+          APP_URL: ${{ vars.APP_URL }}
 
       - name: Smoke test
         if: steps.cf.outputs.ready == 'true'
-        # Cloudflare's bot protection often answers 403 to datacenter IPs (like GitHub's runners),
-        # so a 403 here is only a notice, not a failure. Real visitors are not affected.
+        # A 403 here almost always comes from Cloudflare itself (Bot Fight Mode or a zone-level
+        # challenge/WAF rule on voaneves.com), which challenges datacenter IPs such as GitHub runners.
+        # It says nothing about the Worker, so it is only a notice. Real visitors are not affected.
         run: |
           sleep 5
           code=$(curl -s -o status.json -w '%{http_code}' https://voaneves.com/midflow-app/api/status)
           if [ "$code" = "403" ]; then
-            echo "::notice::Smoke test blocked by Cloudflare bot protection (403), expected from GitHub runners. Check manually: https://voaneves.com/midflow-app/api/status"
+            echo "::notice title=Smoke test skipped (HTTP 403)::Cloudflare answered 403 to the GitHub runner. Reason: Bot Fight Mode or a zone challenge/WAF rule on voaneves.com blocks datacenter IPs. The Worker was deployed; verify manually from a browser: https://voaneves.com/midflow-app/api/status (to automate, add a WAF skip rule for this path or a runner header check)."
           elif [ "$code" != "200" ]; then
             echo "::error::API answered HTTP $code"; cat status.json; exit 1
           elif grep -q '"aiEnabled":true' status.json; then
@@ -125,30 +168,41 @@ jobs:
   site:
     needs: checks
     runs-on: ubuntu-24.04
+    # Only this job can write to Pages and mint the OIDC token that deploy-pages needs.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Build
         env:
           # Same-origin path of the API (the Worker route). Not a secret.
           VITE_API_URL: /midflow-app
+          # Public client settings (repository Variables, not Secrets). Empty = local mode without accounts or billing.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_BILLING_ENABLED: ${{ vars.VITE_BILLING_ENABLED }}
         run: npm run build
       - run: npm run check:budget
 
       # Hash routing → every path works; 404.html covers direct hits on unknown paths.
       - run: cp dist/index.html dist/404.html
 
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

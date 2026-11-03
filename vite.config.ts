@@ -38,6 +38,19 @@ function pwaPlugin(): Plugin {
   }
 }
 
+/**
+ * index.html ships a CSP <meta>. Dev needs an inline react-refresh preamble and an HMR websocket,
+ * and the single-file build inlines its scripts; both would be blocked, so the meta is dropped there.
+ */
+function stripCspMetaPlugin(): Plugin {
+  return {
+    name: 'midflow-strip-csp-meta',
+    transformIndexHtml(html) {
+      return html.replace(/\s*<meta\s[^>]*http-equiv="Content-Security-Policy"[^>]*\/?>/i, '')
+    },
+  }
+}
+
 // `npm run build:single` produces one self-contained index.html (offline demo, no API).
 export default defineConfig(({ mode, command }) => {
   if (command === 'serve') {
@@ -45,9 +58,16 @@ export default defineConfig(({ mode, command }) => {
     const env = loadEnv(mode, process.cwd(), '')
     for (const [k, v] of Object.entries(env)) if (process.env[k] === undefined) process.env[k] = v
   }
+  const stripCsp = command === 'serve' || mode === 'single'
   return {
     base: './',
-    plugins: [apiServerPlugin(), react(), tailwindcss(), ...(mode === 'single' ? [viteSingleFile()] : [pwaPlugin()])],
+    plugins: [
+      apiServerPlugin(),
+      react(),
+      tailwindcss(),
+      ...(stripCsp ? [stripCspMetaPlugin()] : []),
+      ...(mode === 'single' ? [viteSingleFile()] : [pwaPlugin()]),
+    ],
     build:
       mode === 'single'
         ? { outDir: 'dist-single', assetsInlineLimit: 100_000_000, chunkSizeWarningLimit: 10_000 }

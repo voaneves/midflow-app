@@ -17,7 +17,7 @@ const variants: Record<ButtonVariant, string> = {
 
 /** Heights: sm 40 · md 44 · lg 52 px. */
 const sizes = {
-  sm: 'h-10 px-3.5 text-sm gap-1.5 rounded-xl',
+  sm: 'h-10 pointer-coarse:h-11 px-3.5 text-sm gap-1.5 rounded-xl',
   md: 'h-11 px-4 text-sm gap-2 rounded-xl',
   lg: 'h-13 px-6 text-base gap-2.5 rounded-xl',
 }
@@ -49,7 +49,7 @@ export function Button({ variant = 'primary', size = 'md', loading, className, c
   )
 }
 
-const iconSizes = { sm: 'size-10', md: 'size-11', lg: 'size-12' }
+const iconSizes = { sm: 'size-10 pointer-coarse:size-11', md: 'size-11', lg: 'size-12' }
 const iconVariants = {
   ghost: 'text-slate-700 hover:bg-slate-100 hover:text-ink',
   secondary: 'border border-line bg-white text-slate-700 hover:bg-slate-50',

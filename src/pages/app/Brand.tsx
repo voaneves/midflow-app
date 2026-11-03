@@ -3,11 +3,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../components/creative/Creative'
 import { ColorSwatches } from '../../components/creative/parts'
-import { readFile } from '../../components/creative/helpers'
 import { ActionBar, Badge, Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, IconButton, Input, Select, Textarea, toast, useSavedIndicator } from '../../components/ui'
 import { derivePalette } from '../../lib/color'
 import { planDef, SEGMENT_OPTIONS, segmentDef, STYLES, TONES } from '../../lib/data'
 import { generate } from '../../lib/generator'
+import { ImageError, prepareLogo } from '../../lib/image'
 import { photoUrl } from '../../lib/photos'
 import { briefingFromBrand, useApp } from '../../lib/store'
 import type { Brand as BrandType, SegmentId, StyleId, ToneId } from '../../lib/types'
@@ -240,8 +240,15 @@ export function Brand() {
                       accept="image/png,image/svg+xml,image/webp,image/jpeg"
                       className="sr-only"
                       onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) set({ logo: await readFile(f) })
+                        const input = e.target
+                        const f = input.files?.[0]
+                        if (!f) return
+                        try {
+                          set({ logo: await prepareLogo(f) })
+                        } catch (err) {
+                          toast(err instanceof ImageError ? err.message : 'Não foi possível usar esse arquivo. Tente outra imagem.', 'error')
+                        }
+                        input.value = ''
                       }}
                     />
                   </label>

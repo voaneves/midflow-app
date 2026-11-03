@@ -1,6 +1,10 @@
 import { Check, ChevronDown, CreditCard, Crown, Minus, QrCode } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Button, Card, ChoiceGroup, cx, Dialog, Field, Input, toast, UsageMeter, useIsPhone } from '../../components/ui'
+import { ManageSubscriptionButton } from '../../components/ManageSubscription'
+import { manageSubscription, useCanManageSubscription } from '../../lib/subscription'
+import { isBillingEnabled, startCheckout } from '../../lib/backend'
 import { PLANS, planDef, type PlanDef } from '../../lib/data'
 import { useApp } from '../../lib/store'
 import type { PlanId } from '../../lib/types'
@@ -41,6 +45,12 @@ export function Plans() {
   const plan = useApp((s) => s.plan)
   const used = useApp((s) => s.used)
   const setPlan = useApp((s) => s.setPlan)
+  const refreshPlan = useApp((s) => s.refreshPlan)
+  const accountId = useApp((s) => s.user?.id)
+  // Real billing needs the public flag AND a signed-in backend account; otherwise the prototype simulation stays.
+  const live = isBillingEnabled() && !!accountId
+  const canManage = useCanManageSubscription()
+  const [params, setParams] = useSearchParams()
   const phone = useIsPhone()
   const [period, setPeriod] = useState<'mensal' | 'anual'>('mensal')
   const annual = period === 'anual'
@@ -72,8 +82,32 @@ export function Plans() {
     setVisible(kids.reduce((best, el, i) => (dist(el) < dist(kids[best]) ? i : best), 0))
   }
 
-  const confirm = () => {
+  // Back from Stripe Checkout: the webhook may take a few seconds, so re-read the plan a few times.
+  const returned = params.get('checkout')
+  useEffect(() => {
+    if (!returned) return
+    setParams({}, { replace: true })
+    if (returned === 'cancel') return void toast('Pagamento cancelado. Seu plano não foi alterado.')
+    if (returned !== 'success') return
+    toast('Pagamento recebido. Estamos liberando o seu plano.')
+    const timers = [0, 3000, 8000, 15000].map((ms) => setTimeout(() => void refreshPlan(), ms))
+    return () => timers.forEach(clearTimeout)
+  }, [returned, setParams, refreshPlan])
+
+  const confirm = async () => {
     if (!checkout) return
+    if (live) {
+      setBusy(true)
+      const res = await startCheckout(checkout.id, annual ? 'year' : 'month')
+      if (res.ok) return void window.location.assign(res.url) // leaves the app; keep the spinner until the page unloads
+      setBusy(false)
+      // 409: the account already has a subscription, so changes go through the Stripe portal instead of a new checkout.
+      if (res.status === 409) {
+        setCheckout(null)
+        return void toast(res.error, 'info', { action: { label: 'Gerenciar assinatura', onClick: () => void manageSubscription() } })
+      }
+      return void toast(res.error)
+    }
     setBusy(true)
     setTimeout(() => {
       setPlan(checkout.id)
@@ -103,6 +137,7 @@ export function Plans() {
           <UsageMeter used={used} total={cur.contents} label="Conteúdos este mês" />
           <p className="mt-1.5 text-caption text-fg-subtle">Renova no dia 1º. Cada post ou sequência de Stories conta como 1 conteúdo.</p>
         </div>
+        {canManage && <ManageSubscriptionButton variant="secondary" className="w-full sm:w-auto" />}
       </Card>
 
       <div className="flex justify-center">
@@ -247,7 +282,7 @@ export function Plans() {
         title={checkout ? `Assinar o plano ${checkout.name}` : ''}
         footer={
           <Button size="lg" className="w-full" loading={busy} onClick={confirm}>
-            Confirmar assinatura (simulação)
+            {live ? 'Ir para o pagamento seguro' : 'Confirmar assinatura (simulação)'}
           </Button>
         }
       >
@@ -260,6 +295,12 @@ export function Plans() {
               </div>
               <p className="text-right text-lg font-bold tabular-nums">R$ {brl(annual ? checkout.price * 10 : checkout.price)}</p>
             </div>
+            {live ? (
+              <p className="rounded-xl border border-line p-4 text-sm text-fg-muted">
+                Você será levado ao ambiente seguro da Stripe para informar os dados do cartão. A assinatura é renovada automaticamente e pode ser cancelada quando quiser.
+              </p>
+            ) : (
+              <>
             <ChoiceGroup
               legend="Forma de pagamento"
               variant="segmented"
@@ -283,6 +324,8 @@ export function Plans() {
               <Field label="Número do cartão" hint="Campos desativados no protótipo.">
                 <Input inputMode="numeric" autoComplete="cc-number" placeholder="0000 0000 0000 0000" disabled />
               </Field>
+            )}
+              </>
             )}
           </div>
         )}

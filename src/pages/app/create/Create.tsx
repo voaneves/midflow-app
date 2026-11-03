@@ -61,7 +61,7 @@ export function Stepper({ step }: { step: number }) {
                 className={cx(
                   'grid size-10 shrink-0 place-items-center rounded-full text-base font-bold transition-colors',
                   active && 'ring-4 ring-brand-100',
-                  active || isDone(s.n) ? 'bg-brand-700 text-white' : 'bg-slate-200 text-slate-600',
+                  active || isDone(s.n) ? 'bg-brand-700 text-white' : can ? 'bg-slate-200 text-slate-600' : 'border border-dashed border-slate-400 bg-transparent text-slate-600',
                 )}
               >
                 {isDone(s.n) ? <Check className="size-5" strokeWidth={3} /> : s.n}
@@ -80,7 +80,7 @@ export function Stepper({ step }: { step: number }) {
                   {content}
                 </Link>
               ) : (
-                <span aria-current={active ? 'step' : undefined} className={cx('flex min-h-11 shrink-0 items-center gap-3 py-1 pr-2', !can && 'opacity-70')}>
+                <span aria-current={active ? 'step' : undefined} className={cx('flex min-h-11 shrink-0 items-center gap-3 py-1 pr-2', !can && 'cursor-not-allowed')}>
                   {content}
                 </span>
               )}

@@ -83,7 +83,8 @@ export const THEME_LABELS_MAP: Record<string, string> = {
  */
 export async function rewriteWithAI(
   req: AIRewriteRequest,
-): Promise<{ success: boolean; data?: any; engine: string }> {
+): Promise<{ success: boolean; data?: any; engine: string; aiError?: string; model?: string; latencyMs?: number }> {
+  const started = Date.now()
   const mode = req.mode || 'vendedor'
   const creative = req.creative || { headline: 'Excelência em cada detalhe', cta: 'Saiba mais', caption: '' }
   const brandName = req.brandName || 'Sua Marca'
@@ -119,6 +120,8 @@ Responda em JSON: {"headline","highlight","sub","bullets":[],"cta","caption"}`,
     return {
       success: true,
       engine: res.engine,
+      model: res.model,
+      latencyMs: Date.now() - started,
       data: {
         headline,
         highlight,
@@ -133,12 +136,68 @@ Responda em JSON: {"headline","highlight","sub","bullets":[],"cta","caption"}`,
   return {
     success: true,
     engine: 'template',
+    model: res.model,
+    latencyMs: Date.now() - started,
+    // Internal reason, classified by classifyAiError(); never shown to customers.
+    aiError: res.ok ? 'Resposta da IA inválida.' : res.error || 'Falha desconhecida no provedor de IA.',
     data: synthesizeContextualRewrite({ ...req, creative, mode, brandName }),
   }
 }
 
+/* ---------------- AI failure classification ---------------- */
 
-function synthesizeContextualRewrite(req: AIRewriteRequest) {
+/**
+ * transient: worth retrying (timeouts, 5xx, provider rate limit, weak answer).
+ * daily_cap: our own daily budget is spent; retrying today changes nothing.
+ * config: no key, wrong key or retired model; an operator must fix it.
+ */
+export type AiErrorKind = 'transient' | 'daily_cap' | 'config'
+
+/** Short, fixed vocabulary stored in ai_events.error_code. Never raw provider text. */
+export type AiErrorCode =
+  | 'not_configured'
+  | 'invalid_key'
+  | 'model_not_found'
+  | 'daily_cap'
+  | 'rate_limit'
+  | 'timeout'
+  | 'provider_error'
+  | 'low_quality'
+  | 'bad_response'
+  | 'network'
+
+const ERROR_KIND: Record<AiErrorCode, AiErrorKind> = {
+  not_configured: 'config',
+  invalid_key: 'config',
+  model_not_found: 'config',
+  daily_cap: 'daily_cap',
+  rate_limit: 'transient',
+  timeout: 'transient',
+  provider_error: 'transient',
+  low_quality: 'transient',
+  bad_response: 'transient',
+  network: 'transient',
+}
+
+/** Maps the Portuguese error strings produced by server/ai/llm.ts and the pipeline to a stable code. */
+export function classifyAiError(aiError: string | undefined): AiErrorCode {
+  const e = (aiError || '').toLowerCase()
+  if (!e || e.includes('nenhuma chave') || e.includes('não configurada')) return 'not_configured'
+  if (e.includes('limite diário')) return 'daily_cap'
+  if (e.includes('chave de api')) return 'invalid_key'
+  if (e.includes('não encontrado')) return 'model_not_found'
+  if (e.includes('limite de uso/cota') || e.includes('cota')) return 'rate_limit'
+  if (e.includes('tempo limite')) return 'timeout'
+  if (e.includes('instável')) return 'provider_error'
+  if (e.includes('abaixo do padrão')) return 'low_quality'
+  if (e.includes('json') || e.includes('resposta') || e.includes('vazia')) return 'bad_response'
+  return 'network'
+}
+
+export const aiErrorKindOf = (code: AiErrorCode): AiErrorKind => ERROR_KIND[code]
+
+
+export function synthesizeContextualRewrite(req: AIRewriteRequest) {
   const { creative, mode = 'vendedor', brandName = 'nossa equipe', seed = 1 } = req
   const cleanOriginal = (creative.headline || 'Cuidado especializado').replace(/[.!?]+$/, '').trim()
   const words = cleanOriginal.split(/\s+/)

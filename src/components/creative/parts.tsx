@@ -99,7 +99,7 @@ export function CreativeTile({
   index?: number
 }) {
   const name = creativeLabel(c)
-  const lp = useLongPress(() => onSelect?.())
+  const { consumed: longPressConsumed, ...lp } = useLongPress(() => onSelect?.())
   return (
     <div className="group flex min-w-0 animate-rise flex-col gap-2" style={{ animationDelay: `${Math.min(index, 11) * 50}ms` }}>
       <div className={cx('relative overflow-hidden rounded-xl ring-offset-2 transition duration-200', selected ? 'ring-3 ring-brand-600' : 'ring-0')}>
@@ -110,7 +110,7 @@ export function CreativeTile({
           {...(onSelect ? lp : {})}
           className="absolute inset-0 block w-full [-webkit-touch-callout:none]"
           onClick={() => {
-            if (lp.consumed()) return
+            if (longPressConsumed()) return
             if (selecting && onSelect) onSelect()
             else onOpen?.()
           }}

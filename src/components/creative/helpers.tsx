@@ -40,13 +40,3 @@ export function jobFor(c: CreativeT, look: Look, i: number, theme: string): Expo
   const kind = c.kind === 'story' ? 'story' : 'post'
   return { creative: c, ...look, name: `${String(i + 1).padStart(2, '0')}-${kind}-${slug(theme || c.headline)}.png` }
 }
-
-/** File → data URL. */
-export function readFile(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = () => res(r.result as string)
-    r.onerror = rej
-    r.readAsDataURL(file)
-  })
-}

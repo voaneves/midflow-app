@@ -1,7 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /app/
-Disallow: /dev/
 
-Sitemap: https://midflow.com.br/sitemap.xml
-
+Sitemap: https://voaneves.com/midflow-app/sitemap.xml

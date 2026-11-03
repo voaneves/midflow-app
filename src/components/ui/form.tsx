@@ -1,8 +1,9 @@
-import { AlertCircle, Check } from 'lucide-react'
+import { AlertCircle, Check, Eye, EyeOff } from 'lucide-react'
 import {
   createContext,
   useContext,
   useId,
+  useState,
   type InputHTMLAttributes,
   type ReactNode,
   type Ref,
@@ -121,6 +122,32 @@ export function Input({ className, icon, ref, ...rest }: InputHTMLAttributes<HTM
         </span>
       )}
       <input ref={ref} {...rest} {...f} className={cx(fieldBase, 'h-11', icon && 'pl-10', className)} />
+    </div>
+  )
+}
+
+/** Password field with an accessible show/hide toggle (aria-pressed). The text stays hidden until the person asks. */
+export function PasswordInput({ className, icon, ref, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { icon?: ReactNode; ref?: Ref<HTMLInputElement> }) {
+  const f = useFieldProps(rest)
+  const [shown, setShown] = useState(false)
+  return (
+    <div className="relative">
+      {icon && (
+        <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-500" aria-hidden>
+          {icon}
+        </span>
+      )}
+      <input ref={ref} {...rest} {...f} type={shown ? 'text' : 'password'} className={cx(fieldBase, 'h-11 pr-12', icon && 'pl-10', className)} />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-pressed={shown}
+        aria-controls={f.id}
+        aria-label={shown ? 'Ocultar senha' : 'Mostrar senha'}
+        className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center rounded-r-xl text-slate-600 transition hover:text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-600"
+      >
+        {shown ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
+      </button>
     </div>
   )
 }

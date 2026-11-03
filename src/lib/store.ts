@@ -1,9 +1,16 @@
 import { api } from './api'
+import { authHeaders, getBackend, isSupabaseConfigured } from './backend'
+import type { AuthResult, AuthSession } from './backend'
+import { GenerateError, MAX_RETRIES, RETRY_DELAYS_MS, sleep, type RetryInfo } from './generation'
+import { isBillingPlan } from './backend/planLimits'
+import { createSync } from './backend/sync'
+import { toast } from '../components/ui/toast-store'
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { derivePalette, suggestedColors } from './color'
 import { DEMO_BRIEFING_TEXT, planDef, segmentDef } from './data'
 import { generate, handleFrom, uid } from './generator'
+import { clearOAuthPending, isOAuthPending, markRecoveryPending } from './oauthReturn'
 import { track } from './telemetry'
 import type {
   Brand,
@@ -127,6 +134,8 @@ function styleFromBrand(b: Brand): StyleSel {
 export interface User {
   name: string
   email: string
+  /** Backend account id. Absent for local logins and demo mode, which never sync. */
+  id?: string
 }
 
 interface State {
@@ -147,6 +156,13 @@ interface State {
 
   login: (u: User) => void
   logout: () => void
+  /** Real accounts: go through the configured auth provider (Supabase), or the local adapter when none is set. */
+  authSignIn: (email: string, password: string) => Promise<AuthResult>
+  authSignUp: (u: { name: string; email: string; password: string }, company: string, segment: SegmentId) => Promise<AuthResult>
+  /** Re-reads plan and usage from the backend (after a Stripe checkout). No-op without an account. */
+  refreshPlan: () => Promise<void>
+  /** Adopts a session created outside the forms (Google sign-in return). No-op when that user is already signed in. */
+  adoptSession: (session: AuthSession) => Promise<void>
   loadDemo: () => void
   signup: (u: User, company: string, segment: SegmentId) => void
   setBrand: (b: Partial<Brand>) => void
@@ -160,7 +176,7 @@ interface State {
   markDone: (step: 1 | 2 | 3) => void
   newExamples: () => void
   /** `signal` cancels the request; `offline` uses the local template engine (labelled as such, never as AI). */
-  runGeneration: (customParams?: Partial<GenParams>, opts?: { signal?: AbortSignal; offline?: boolean }) => Promise<Generation>
+  runGeneration: (customParams?: Partial<GenParams>, opts?: { signal?: AbortSignal; offline?: boolean; onRetry?: (info: RetryInfo) => void }) => Promise<Generation>
   setActiveGen: (id: string) => void
   updateCreative: (genId: string, creative: Creative) => void
   removeCreative: (genId: string, id: string) => void
@@ -186,6 +202,13 @@ interface State {
   setPlan: (p: PlanId) => void
   resetCreate: () => void
   resetAll: () => void
+}
+
+/** The `usage` object of /api/generate ({ plan, used, limit }); anything malformed is ignored. */
+function parseServerUsage(raw: unknown): { plan: PlanId; used: number } | null {
+  const u = raw as { plan?: unknown; used?: unknown } | null
+  if (!u || typeof u !== 'object' || !isBillingPlan(u.plan) || typeof u.used !== 'number' || !Number.isFinite(u.used) || u.used < 0) return null
+  return { plan: u.plan, used: Math.floor(u.used) }
 }
 
 /** Paleta e estilo calculados a partir da Etapa 3 */
@@ -342,8 +365,55 @@ export const useApp = create<State>()(
     (set, get) => ({
       ...initial,
 
-      login: (u) => set({ user: u }),
-      logout: () => set({ user: null }),
+      // Editing the profile of a signed-in account keeps its backend id (same e-mail); any other login is local-only.
+      login: (u) => set((st) => ({ user: u.id || st.user?.email !== u.email || !st.user?.id ? u : { ...u, id: st.user.id } })),
+      logout: () => {
+        const account = !!get().user?.id
+        if (isSupabaseConfigured())
+          void getBackend()
+            .then((b) => b.auth.signOut())
+            .catch(() => {})
+        if (!account) return set({ user: null })
+        // A real account was signed in: do not leave its data on this device for the next visitor.
+        const lib = seedLibrary(DEMO_BRAND)
+        set({ ...initial, library: lib, scheduledPosts: seedSchedule(DEMO_BRAND, lib) })
+      },
+      authSignIn: async (email, password) => {
+        const { auth } = await getBackend()
+        const res = await auth.signIn({ email, password })
+        if (!res.ok || !res.session) return res
+        await get().adoptSession(res.session)
+        return res
+      },
+      adoptSession: async ({ user }) => {
+        const remote = isSupabaseConfigured()
+        if (remote && get().user?.id === user.id) return
+        set({ user: { name: user.name, email: user.email, ...(remote ? { id: user.id } : {}) } })
+        if (remote && sync) {
+          await sync.hydrate(user.id)
+          // First sign-in after e-mail confirmation: nothing saved yet, so create the business from sign-up data.
+          if (get().brands.every((b) => b.id === DEMO_BRAND.id)) {
+            get().signup({ name: user.name, email: user.email }, user.company || 'Minha empresa', user.segment || 'outro')
+            set((s) => ({ user: s.user && { ...s.user, id: user.id } }))
+            await sync.flush()
+          }
+        }
+      },
+      authSignUp: async ({ name, email, password }, company, segment) => {
+        const { auth } = await getBackend()
+        const res = await auth.signUp({ email, password, name, company, segment })
+        if (!res.ok || !res.session) return res // e-mail confirmation pending: nothing is created until the first sign-in
+        get().signup({ name, email }, company, segment)
+        if (isSupabaseConfigured()) {
+          const id = res.session.user.id
+          set((s) => ({ user: s.user && { ...s.user, id } }))
+          await sync?.hydrate(id)
+        }
+        return res
+      },
+      refreshPlan: async () => {
+        await sync?.refreshPlan()
+      },
       loadDemo: () => {
         const lib = seedLibrary(DEMO_BRAND)
         set({
@@ -480,46 +550,67 @@ export const useApp = create<State>()(
           ...customParams,
         }
 
-        // 1. Backend: IA real + controle de qualidade (skipped when the user explicitly picks the offline model)
-        let res: Response | null = null
+        // 1. Backend: IA real + controle de qualidade (skipped when the user explicitly picks the offline model).
+        //    A temporary AI failure comes back as a template result with `retryable: true`: retry a few times with
+        //    backoff, then keep the (honestly labelled) template result.
         if (!opts.offline) {
-          try {
-            res = await fetch(api('/api/generate'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ params, version }),
-              signal: opts.signal,
-            })
-          } catch (e) {
-            // A user cancel must not silently turn into a template generation.
-            if ((e as Error)?.name === 'AbortError') throw e
-            console.warn('[MIDFLOW] Servidor indisponível, usando gerador local:', e)
-          }
-        }
-        opts.signal?.throwIfAborted()
+          for (let attempt = 0; ; attempt++) {
+            let res: Response | null = null
+            try {
+              res = await fetch(api('/api/generate'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(await authHeaders().catch(() => ({}))) },
+                body: JSON.stringify({ params, version }),
+                signal: opts.signal,
+              })
+            } catch (e) {
+              // A user cancel must not silently turn into a template generation.
+              if ((e as Error)?.name === 'AbortError') throw e
+              console.warn('[MIDFLOW] Servidor indisponível, usando gerador local:', e)
+            }
+            opts.signal?.throwIfAborted()
+            if (!res) break
 
-        if (res?.ok) {
-          const data = await res.json()
-          if (data.generation) {
-            const g: Generation = { ...data.generation, version }
-            const cost = g.posts.length + (g.stories.length ? 1 : 0)
-            set({ generations: [...s.generations, g], activeGenId: g.id, used: s.used + cost })
-            return g
-          }
-        }
+            if (res.ok) {
+              const data = await res.json().catch(() => null)
+              if (data?.generation) {
+                const g: Generation = { ...data.generation, version }
+                if (g.engine === 'template' && data.aiErrorKind) g.aiErrorKind = data.aiErrorKind
+                if (g.engine === 'template' && data.code === 'account_required') g.aiErrorCode = 'account_required'
+                if (g.engine === 'template' && data.retryable === true && attempt < MAX_RETRIES) {
+                  const delayMs = RETRY_DELAYS_MS[attempt]
+                  opts.onRetry?.({ attempt: attempt + 1, max: MAX_RETRIES, delayMs })
+                  await sleep(delayMs, opts.signal)
+                  continue
+                }
+                const cost = g.posts.length + (g.stories.length ? 1 : 0)
+                const usage = parseServerUsage(data.usage)
+                set((st) => ({
+                  generations: [...st.generations, g],
+                  activeGenId: g.id,
+                  // Signed-in accounts: the server counter is the truth. Demo and browser-only logins keep counting locally.
+                  ...(st.user?.id && usage ? { used: usage.used, plan: usage.plan } : { used: st.used + cost }),
+                }))
+                return g
+              }
+              break
+            }
 
-        // Our API answered with a clear JSON error (rate limit, AI down with AI_REQUIRE_LLM, bad input): show it.
-        // Anything else (404/405 HTML from a static host such as GitHub Pages) means "no backend here".
-        if (res && !res.ok) {
-          const data = await res.json().catch(() => null)
-          if (data?.error) throw new Error(data.error)
+            // Our API answered with a clear JSON error: show it. Anything else (404/405 HTML from a static host such as
+            // GitHub Pages) means "no backend here".
+            const data = await res.json().catch(() => null)
+            if (res.status === 402) throw new GenerateError('quota', data?.error || 'Você chegou ao limite de conteúdos do seu plano neste mês.')
+            if (res.status === 401) throw new GenerateError('auth', data?.error || 'Sua sessão expirou. Entre novamente para continuar.')
+            if (data?.error) throw new Error(data.error)
+            break
+          }
         }
 
         // 2. No backend at all (static demo hosting): local templates, clearly labeled.
         const g: Generation = { ...generate(params, version), engine: 'local' }
         track('client_fallback', { generationId: g.id, brandName: params.brandName })
         const cost = g.posts.length + (g.stories.length ? 1 : 0)
-        set({ generations: [...s.generations, g], activeGenId: g.id, used: s.used + cost })
+        set((st) => ({ generations: [...st.generations, g], activeGenId: g.id, used: st.used + cost }))
         return g
       },
       setActiveGen: (id) => set({ activeGenId: id }),
@@ -663,3 +754,41 @@ export const useApp = create<State>()(
 
 export const useActiveGen = () =>
   useApp((s) => s.generations.find((g) => g.id === s.activeGenId) ?? s.generations[s.generations.length - 1] ?? null)
+
+/**
+ * Account sync exists only when Supabase is configured; otherwise the persisted store above is the whole
+ * persistence layer, exactly as before. Demo mode and local logins have no user.id and never sync.
+ */
+const sync = isSupabaseConfigured()
+  ? createSync(useApp, getBackend, {
+      demoBrandIds: [DEMO_BRAND.id ?? ''],
+      onRemoteBrands: (brands) => useApp.setState({ briefing: briefingFromBrand(brands[0]), style: styleFromBrand(brands[0]) }),
+      onSessionEnded: () => useApp.getState().logout(),
+      onRowsSkipped: () => toast('Algumas imagens ou itens são grandes demais para sincronizar com a nuvem. Eles continuam salvos neste navegador.', 'info', { duration: 9000 }),
+    })
+  : null
+sync?.start()
+
+// Return from "Continuar com Google": the provider redirects back to the app root with a session in the URL.
+// Only a flow started in this tab (flag set before the redirect) signs the user in; a persisted session alone never does.
+if (sync) {
+  void getBackend().then(({ auth }) =>
+    auth.onChange((session) => {
+      if (!session || !isOAuthPending()) return
+      clearOAuthPending()
+      void useApp
+        .getState()
+        .adoptSession(session)
+        .then(() => {
+          window.location.hash = '#/app'
+        })
+    }),
+  )
+  // Return from the "Esqueci a senha" e-mail: send the person to the new-password screen.
+  void getBackend().then(({ auth }) =>
+    auth.onPasswordRecovery(() => {
+      markRecoveryPending()
+      window.location.hash = '#/nova-senha'
+    }),
+  )
+}

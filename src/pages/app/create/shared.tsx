@@ -97,7 +97,7 @@ export function FlowActions({
   return (
     <ActionBar hint={blockedReason ? <span id={hintId} role="status">{blockedReason}</span> : undefined}>
       {onBack && (
-        <Button variant="secondary" size="lg" onClick={onBack} className="flex-1 px-4 lg:flex-none">
+        <Button variant="secondary" size="lg" onClick={onBack} className="flex-none px-3! sm:flex-1 sm:px-6! lg:flex-none">
           <ArrowLeft className="size-5" aria-hidden /> <span className="truncate">{backLabel}</span>
         </Button>
       )}
@@ -108,7 +108,7 @@ export function FlowActions({
         aria-disabled={blockedReason ? true : undefined}
         aria-describedby={blockedReason ? hintId : undefined}
         onClick={() => (blockedReason ? onBlocked?.() : onPrimary())}
-        className={cx('flex-[2] lg:flex-none', blockedReason && 'opacity-60 shadow-none')}
+        className={cx('min-w-0 flex-1 px-4! sm:flex-[2] sm:px-6! lg:flex-none', blockedReason && 'opacity-60 shadow-none')}
       >
         <span className="truncate">{primaryLabel}</span> {primaryIcon}
       </Button>

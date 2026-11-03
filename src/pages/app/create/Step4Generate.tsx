@@ -11,6 +11,8 @@ import {
   Hash,
   ListChecks,
   Loader2,
+  LogIn,
+  MessageSquareWarning,
   MoreVertical,
   Pencil,
   Play,
@@ -25,11 +27,12 @@ import {
   ZoomIn,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { HeaderAction } from '../../../components/AppLayout'
 import { Creative } from '../../../components/creative/Creative'
 import { CreativeViewer } from '../../../components/creative/CreativeViewer'
 import { LazyEditor as Editor } from '../../../components/creative/LazyEditor'
+import { ReviewDialog } from '../../../components/creative/ReviewDialog'
 import { CreativeTile, PhoneMockup } from '../../../components/creative/parts'
 import { exportCreatives, jobFor, tileMenu, useLook, type Look } from '../../../components/creative/helpers'
 import { SocialPublishModal } from '../../../components/creative/SocialPublishModal'
@@ -54,9 +57,10 @@ import {
   toast,
   type MenuItem,
 } from '../../../components/ui'
-import { generateCustomImageWithAI } from '../../../lib/aiService'
+import { DAILY_IMAGE_LIMIT_MESSAGE, generateCustomImageWithAI } from '../../../lib/aiService'
 import { localISODate } from '../../../lib/dates'
 import { copyText } from '../../../lib/export'
+import { ACCOUNT_REQUIRED_MESSAGE, GenerateError, type GenerateErrorCode, type RetryInfo } from '../../../lib/generation'
 import { getSocialTips } from '../../../lib/social'
 import { paramsFrom, useActiveGen, useApp } from '../../../lib/store'
 import { engineLabel, sendFeedback, track } from '../../../lib/telemetry'
@@ -73,7 +77,7 @@ const STAGES = [
 ]
 
 /** Progress tied to the real request: elapsed time, the current stage, and a Cancel button. */
-function Generating({ version, onCancel }: { version: number; onCancel: () => void }) {
+function Generating({ version, retry, onCancel }: { version: number; retry: RetryInfo | null; onCancel: () => void }) {
   const [secs, setSecs] = useState(0)
   useEffect(() => {
     const s = setInterval(() => setSecs((x) => x + 1), 1000)
@@ -117,7 +121,11 @@ function Generating({ version, onCancel }: { version: number; onCancel: () => vo
             )
           })}
         </ol>
-        <p className="mt-5 text-center text-xs text-fg-subtle tabular-nums">
+        {/* Live region: announced by screen readers when an automatic retry starts. */}
+        <p role="status" aria-live="polite" className="mt-4 text-center text-sm font-semibold text-amber-900">
+          {retry ? `Ainda processando, tentando novamente (${retry.attempt}/${retry.max})…` : ''}
+        </p>
+        <p className="mt-3 text-center text-xs text-fg-subtle tabular-nums">
           {secs < 20 ? `${secs} s · costuma levar de 10 a 30 segundos.` : `Ainda trabalhando (${secs} s). Conexões lentas podem demorar mais.`}
         </p>
         <div className="mt-5 text-center">
@@ -216,7 +224,7 @@ function sameParams(a: Generation['params'], b: Generation['params']) {
   return pick(a) === pick(b)
 }
 
-type Status = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'cancelled' }
+type Status = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; message: string; code?: GenerateErrorCode } | { kind: 'cancelled' }
 type TabId = 'posts' | 'stories' | 'legendas'
 
 export function Step4Generate() {
@@ -238,6 +246,8 @@ export function Step4Generate() {
   const [seqOpen, setSeqOpen] = useState(false)
   const [schedOpen, setSchedOpen] = useState(false)
   const [qualityOpen, setQualityOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [retry, setRetry] = useState<RetryInfo | null>(null)
   const [tab, setTab] = useState<TabId>('posts')
   const started = useRef(false)
 
@@ -245,26 +255,39 @@ export function Step4Generate() {
     const ctl = new AbortController()
     abort.current = ctl
     setStatus({ kind: 'loading' })
+    setRetry(null)
     try {
-      const g = await runGeneration(undefined, { signal: ctl.signal, offline: opts.offline })
+      const g = await runGeneration(undefined, { signal: ctl.signal, offline: opts.offline, onRetry: setRetry })
       setSel(new Set())
       setSelecting(false)
       setFocus(g.posts[0]?.id ?? g.stories[0]?.id ?? null)
       setTab(g.posts.length ? 'posts' : 'stories')
       setStatus({ kind: 'idle' })
       if (g.version > 1) track('new_version', { generationId: g.id, brandName: g.params.brandName })
-      const { label, isAI } = engineLabel(g.engine)
-      toast(isAI ? (g.version > 1 ? `Versão ${g.version} criada com IA` : 'Conteúdo pronto, criado com IA') : `Conteúdo criado com ${label.toLowerCase()}. Revise os textos antes de publicar.`, isAI ? 'ok' : 'info')
+      const { isAI } = engineLabel(g.engine)
+      toast(
+        isAI
+          ? g.version > 1
+            ? `Versão ${g.version} criada com IA`
+            : 'Conteúdo pronto, criado com IA'
+          : g.engine === 'template'
+            ? g.aiErrorCode === 'account_required'
+              ? `${ACCOUNT_REQUIRED_MESSAGE} Esta é a versão padrão, sem IA. Revise os textos antes de publicar.`
+              : 'A IA está indisponível no momento, então criamos a versão padrão, sem IA. Revise os textos antes de publicar.'
+            : 'Conteúdo criado no modo offline, sem IA. Revise os textos antes de publicar.',
+        isAI ? 'ok' : 'info',
+      )
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') {
         setStatus(gen ? { kind: 'idle' } : { kind: 'cancelled' })
         toast('Geração cancelada', 'info')
       } else {
         console.error(err)
-        setStatus({ kind: 'error', message: (err as Error)?.message || 'Houve um problema ao gerar o conteúdo.' })
+        setStatus({ kind: 'error', message: (err as Error)?.message || 'Houve um problema ao gerar o conteúdo.', code: err instanceof GenerateError ? err.code : undefined })
       }
     } finally {
       abort.current = null
+      setRetry(null)
     }
   }
 
@@ -288,7 +311,7 @@ export function Step4Generate() {
   if (loading && !gen)
     return (
       <div>
-        <Generating version={generations.length + 1} onCancel={() => abort.current?.abort()} />
+        <Generating version={generations.length + 1} retry={retry} onCancel={() => abort.current?.abort()} />
         <ResultsSkeleton ratio={base.format} />
       </div>
     )
@@ -307,14 +330,10 @@ export function Step4Generate() {
       />
     ) : (
       <ErrorState
-        title="Não foi possível gerar agora"
+        title={status.kind === 'error' && status.code === 'quota' ? 'Limite do plano atingido' : status.kind === 'error' && status.code === 'auth' ? 'Sua sessão expirou' : 'Não foi possível gerar agora'}
         text={status.kind === 'error' ? status.message : 'Tente novamente em instantes.'}
-        onRetry={() => start()}
-        secondary={
-          <Button variant="secondary" onClick={() => start({ offline: true })}>
-            <WifiOff className="size-4" aria-hidden /> Usar modelo offline
-          </Button>
-        }
+        onRetry={status.kind === 'error' && status.code ? undefined : () => start()}
+        secondary={<ErrorActions code={status.kind === 'error' ? status.code : undefined} onOffline={() => start({ offline: true })} />}
       />
     )
 
@@ -351,13 +370,15 @@ export function Step4Generate() {
   }
   const regenerateImage = async (c: CreativeT) => {
     toast('Gerando nova imagem com IA…', 'info')
-    const url = await generateCustomImageWithAI({
+    const img = await generateCustomImageWithAI({
       headline: c.headline, segment: gen.params.segment, themeId: c.themeId || gen.params.themeId, imageType: gen.params.imageType || 'fotos',
       style: c.style ?? look.style, kind: c.kind, order: c.order, seed: Date.now() % 100000, palette: c.palette ?? look.palette,
-    }).catch(() => null)
-    if (url) {
-      updateCreative(gen.id, { ...c, photo: url })
-      toast('Nova imagem aplicada')
+    }).catch((e) => (e instanceof GenerateError ? e : null))
+    if (img instanceof GenerateError) toast(img.message, 'error')
+    else if (img) {
+      updateCreative(gen.id, { ...c, photo: img.url })
+      if (img.notice === 'daily_user_limit') toast(DAILY_IMAGE_LIMIT_MESSAGE, 'info')
+      else toast('Nova imagem aplicada')
     } else toast('Não foi possível gerar a imagem agora.', 'error')
   }
   const menuFor = (c: CreativeT): MenuItem[] => [
@@ -369,6 +390,7 @@ export function Step4Generate() {
   const headerMenu: MenuItem[] = [
     { label: 'Editar briefing', icon: <Pencil className="size-4" />, onClick: () => nav('/app/criar/1') },
     { label: 'Gerar nova versão', icon: <RefreshCw className="size-4" />, onClick: () => start() },
+    { label: 'Solicitar revisão', icon: <MessageSquareWarning className="size-4" />, onClick: () => setReviewOpen(true) },
     { label: 'Salvar tudo na biblioteca', icon: <FolderPlus className="size-4" />, onClick: () => save(all) },
     { label: 'Agendar no calendário', icon: <CalendarClock className="size-4" />, onClick: () => setSchedOpen(true) },
     { label: 'Selecionar criativos', icon: <ListChecks className="size-4" />, onClick: () => setSelecting(true) },
@@ -400,19 +422,19 @@ export function Step4Generate() {
       <div className="min-w-0">
         {loading && (
           <div className="mb-5">
-            <Generating version={generations.length + 1} onCancel={() => abort.current?.abort()} />
+            <Generating version={generations.length + 1} retry={retry} onCancel={() => abort.current?.abort()} />
           </div>
         )}
         {status.kind === 'error' && (
           <div role="alert" className="mb-5 flex flex-col gap-3 rounded-2xl border border-red-200 bg-danger-soft p-4 text-sm sm:flex-row sm:items-center">
             <span className="flex-1 font-medium text-danger">Não foi possível gerar a nova versão: {status.message}</span>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => start()}>
-                Tentar novamente
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => start({ offline: true })}>
-                <WifiOff className="size-4" aria-hidden /> Usar modelo offline
-              </Button>
+            <div className="flex flex-wrap gap-2">
+              {!status.code && (
+                <Button size="sm" onClick={() => start()}>
+                  Tentar novamente
+                </Button>
+              )}
+              <ErrorActions code={status.code} onOffline={() => start({ offline: true })} size="sm" />
             </div>
           </div>
         )}
@@ -443,6 +465,11 @@ export function Step4Generate() {
             Tema: <b>{gen.themeLabel}</b>
           </span>
           <EngineBadge gen={gen} onExplain={() => setQualityOpen(true)} />
+          {engineLabel(gen.engine).isAI && (
+            <Button variant="secondary" size="sm" onClick={() => setReviewOpen(true)}>
+              <MessageSquareWarning className="size-4" aria-hidden /> Solicitar revisão
+            </Button>
+          )}
           {generations.length > 1 && (
             <label className="flex items-center gap-2">
               <span className="sr-only">Versão exibida</span>
@@ -464,6 +491,19 @@ export function Step4Generate() {
             </label>
           )}
         </div>
+        {!engineLabel(gen.engine).isAI && (
+          <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-300 bg-warning-soft px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+            <span className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                <b>Não ficou como esperado?</b> Estes textos são a versão padrão, criada sem IA. Nossa equipe pode revisar e enviar uma versão ajustada.
+              </span>
+            </span>
+            <Button size="sm" variant="dark" onClick={() => setReviewOpen(true)} className="shrink-0">
+              <MessageSquareWarning className="size-4" aria-hidden /> Solicitar revisão
+            </Button>
+          </div>
+        )}
         <FeedbackBar key={gen.id} gen={gen} />
 
         {changed && (
@@ -704,7 +744,30 @@ export function Step4Generate() {
       <StoryPlayer open={seqOpen} onClose={() => setSeqOpen(false)} stories={gen.stories} look={look} />
       <ScheduleDialog open={schedOpen} onClose={() => setSchedOpen(false)} items={selected.length ? selected : all} themeLabel={gen.themeLabel} />
       <QualityDialog open={qualityOpen} onClose={() => setQualityOpen(false)} gen={gen} />
+      <ReviewDialog open={reviewOpen} onClose={() => setReviewOpen(false)} gen={gen} />
     </div>
+  )
+}
+
+/** Next steps for a failed generation: plan limit and expired session point to the right screen; anything else offers the offline default version. */
+function ErrorActions({ code, onOffline, size }: { code?: GenerateErrorCode; onOffline: () => void; size?: 'sm' }) {
+  const link = `inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 text-sm font-semibold text-white hover:bg-brand-800 ${size === 'sm' ? 'h-10 px-3.5' : 'h-11 px-4'}`
+  if (code === 'quota')
+    return (
+      <Link to="/app/planos" className={link}>
+        <Sparkles className="size-4" aria-hidden /> Ver planos
+      </Link>
+    )
+  if (code === 'auth' || code === 'account')
+    return (
+      <Link to="/entrar" state={{ from: '/app/criar/4' }} className={link}>
+        <LogIn className="size-4" aria-hidden /> {code === 'account' ? 'Criar conta gratuita' : 'Entrar novamente'}
+      </Link>
+    )
+  return (
+    <Button variant="secondary" size={size} onClick={onOffline}>
+      <WifiOff className="size-4" aria-hidden /> Usar versão padrão offline
+    </Button>
   )
 }
 
@@ -744,24 +807,36 @@ const VERDICT = {
     detail: 'Criado com IA, mas alguns textos podem precisar de ajustes. Confira títulos e legendas antes de publicar.',
   },
   fallback: {
-    text: 'Modelo de reserva',
+    text: 'Versão padrão (IA indisponível no momento)',
     Icon: AlertTriangle,
     tone: 'bg-warning-soft text-amber-950 ring-amber-300',
     box: 'bg-warning-soft text-amber-950',
     icon: 'text-amber-700',
-    detail: 'Nossa IA estava indisponível, então usamos modelos prontos para você não ficar esperando. Revise os textos antes de publicar ou crie uma nova versão.',
+    detail: 'Nossa IA estava indisponível, então entregamos a versão padrão, montada sem IA, para você não ficar esperando. Revise os textos antes de publicar ou crie uma nova versão.',
   },
 } satisfies Record<Verdict, unknown>
 
+/** Badge/dialog copy. A template answer for a visitor without an account says so instead of blaming the AI. */
+function verdictCopy(gen: Generation) {
+  const verdict = verdictOf(gen)
+  const v = VERDICT[verdict]
+  if (verdict !== 'fallback' || gen.aiErrorCode !== 'account_required') return v
+  return {
+    ...v,
+    text: 'Versão padrão (crie uma conta para usar IA)',
+    detail: 'Para gerar com IA, crie uma conta gratuita. Esta é a versão padrão, montada sem IA. Revise os textos antes de publicar.',
+  }
+}
+
 /** Short verdict, never the provider name. Templates are never presented as AI. Tap explains. */
 function EngineBadge({ gen, onExplain }: { gen: Generation; onExplain: () => void }) {
-  const v = VERDICT[verdictOf(gen)]
+  const v = verdictCopy(gen)
   return (
     <button
       type="button"
       onClick={onExplain}
       aria-haspopup="dialog"
-      className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 py-1.5 font-medium ring-1 transition hover:brightness-95', v.tone)}
+      className={cx('inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-2xl px-3 py-1.5 text-left font-medium ring-1 transition hover:brightness-95 sm:rounded-full', v.tone)}
     >
       <v.Icon className={cx('size-4', v.icon)} aria-hidden />
       {v.text}
@@ -773,7 +848,7 @@ function EngineBadge({ gen, onExplain }: { gen: Generation; onExplain: () => voi
 /** What the customer gets, not how we check it (the quality method stays internal). */
 function QualityDialog({ open, onClose, gen }: { open: boolean; onClose: () => void; gen: Generation }) {
   const verdict = verdictOf(gen)
-  const v = VERDICT[verdict]
+  const v = verdictCopy(gen)
   const showPromises = verdict === 'approved' || verdict === 'review'
   return (
     <Dialog open={open} onClose={onClose} title="Sobre este conteúdo" size="sm">
@@ -807,6 +882,15 @@ function QualityDialog({ open, onClose, gen }: { open: boolean; onClose: () => v
   )
 }
 
+/** Rating chips: the ends carry their meaning for screen readers ("1 (pouco útil)" ... "5 (muito útil)"). */
+const RATING_OPTIONS = [
+  { value: '1', label: <>1<span className="sr-only"> (pouco útil)</span></> },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+  { value: '5', label: <>5<span className="sr-only"> (muito útil)</span></> },
+]
+
 /** 1–5 rating + optional comment per version: the main quality signal of the POC. */
 function FeedbackBar({ gen }: { gen: Generation }) {
   const [rating, setRating] = useState(0)
@@ -827,13 +911,18 @@ function FeedbackBar({ gen }: { gen: Generation }) {
   return (
     <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-line">
       <ChoiceGroup
-        legend="Esses conteúdos estão prontos para postar? (nota de 1 a 5)"
+        legend="Esses conteúdos estão prontos para postar? Dê uma nota de 1 a 5"
         variant="chip"
         value={rating ? String(rating) : ''}
         onChange={(v) => submit(Number(v), '')}
-        options={['1', '2', '3', '4', '5'].map((n) => ({ value: n, label: n }))}
-        optionClassName="min-w-11 justify-center"
+        options={RATING_OPTIONS}
+        className="max-w-xs flex-nowrap"
+        optionClassName="min-w-11 flex-1 justify-center"
       />
+      <div className="mt-1.5 flex max-w-xs justify-between text-caption text-fg-subtle" aria-hidden>
+        <span>Pouco útil</span>
+        <span>Muito útil</span>
+      </div>
       {rating > 0 && (
         <form
           className="mt-3 flex flex-col gap-2 sm:flex-row"

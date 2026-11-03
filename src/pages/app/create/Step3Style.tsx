@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../../components/creative/Creative'
 import { ColorSwatches } from '../../../components/creative/parts'
-import { readFile, useLook } from '../../../components/creative/helpers'
+import { useLook } from '../../../components/creative/helpers'
 import { Button, ChoiceGroup, cx, StoriesIcon, TabPanel, Tabs, Toggle, toast } from '../../../components/ui'
 import { suggestedColors } from '../../../lib/color'
 import { STYLES, TONES } from '../../../lib/data'
+import { ImageError, prepareLogo } from '../../../lib/image'
 import { photoUrl } from '../../../lib/photos'
 import { useApp } from '../../../lib/store'
 import type { ImageType, ToneId } from '../../../lib/types'
@@ -24,16 +25,16 @@ const IMAGE_TYPES: { id: ImageType; label: string; icon: typeof ImageIcon; desc:
 /** Mini frame icon for the aspect-ratio control. */
 const Frame = ({ w, h }: { w: number; h: number }) => <span aria-hidden className="inline-block rounded-[3px] border-2 border-current" style={{ width: w, height: h }} />
 
-const MAX_LOGO = 5 * 1024 * 1024
-
 function LogoUpload({ logo, onChange }: { logo?: string; onChange: (url: string | undefined) => void }) {
   const [over, setOver] = useState(false)
   const take = async (f?: File) => {
     if (!f) return
-    if (!f.type.startsWith('image/')) return toast('Envie uma imagem (PNG, SVG, JPG ou WebP).', 'error')
-    if (f.size > MAX_LOGO) return toast('O arquivo passa de 5 MB.', 'error')
-    onChange(await readFile(f))
-    toast('Logo aplicado aos criativos')
+    try {
+      onChange(await prepareLogo(f)) // validates type and the 5 MB limit, then downscales to <= 1024 px
+      toast('Logo aplicado aos criativos')
+    } catch (e) {
+      toast(e instanceof ImageError ? e.message : 'Não foi possível usar esse arquivo. Tente outra imagem.', 'error')
+    }
   }
   if (logo)
     return (
@@ -159,7 +160,7 @@ export function Step3Style() {
         <ChoiceGroup
           legend="Estilo visual"
           variant="media"
-          className="no-scrollbar snap-row -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 lg:mx-0 lg:grid lg:grid-cols-3 lg:overflow-visible lg:px-0 xl:grid-cols-6"
+          className="no-scrollbar snap-row -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 lg:mx-0 lg:grid lg:grid-cols-3 lg:overflow-visible lg:px-0"
           optionClassName="w-[40%] shrink-0 sm:w-[28%] lg:w-auto"
           value={st.style}
           onChange={(v) => set({ style: v })}

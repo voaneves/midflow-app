@@ -5,9 +5,11 @@
  */
 import fs from 'fs'
 import path from 'path'
+import { config } from './config.ts'
 import { DATA_DIR, isWorker } from './paths.ts'
 
-const EVENTS_FILE = path.join(DATA_DIR, 'events.jsonl')
+// EVENTS_FILE overrides the location (used by the tests so they never touch the real log).
+const EVENTS_FILE = process.env.EVENTS_FILE?.trim() || path.join(DATA_DIR, 'events.jsonl')
 
 try {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -25,6 +27,10 @@ export type EventType =
   | 'copy_caption'
   | 'new_version'
   | 'client_fallback'
+  | 'ai_unavailable'
+  | 'ai_call'
+  | 'review_request'
+  | 'account_deleted'
 
 export const CLIENT_EVENT_TYPES: EventType[] = ['download', 'edit', 'save', 'copy_caption', 'new_version', 'client_fallback']
 
@@ -34,13 +40,82 @@ export interface AppEvent {
   [k: string]: unknown
 }
 
+/** Free-text fields are capped, and e-mail addresses / phone numbers typed into them are redacted. */
+export const COMMENT_MAX_CHARS = 500
+const ERROR_MAX_CHARS = 300
+
+export function scrubText(value: string, max: number): string {
+  return value
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[telefone]')
+    .trim()
+    .slice(0, max)
+}
+
+/** User-typed text is scrubbed and truncated before it is stored. */
+function sanitizeEvent(e: Omit<AppEvent, 'at'>): Omit<AppEvent, 'at'> {
+  const out = { ...e }
+  if (typeof out.comment === 'string') out.comment = scrubText(out.comment, COMMENT_MAX_CHARS) || undefined
+  if (typeof out.aiError === 'string') out.aiError = scrubText(out.aiError, ERROR_MAX_CHARS)
+  if (out.type === 'review_request') {
+    // Events-only storage is a plain log (Workers Logs, a JSONL file): keep sizes, not the customer's contact data or briefing.
+    if ('contactEmail' in out) {
+      out.hasContact = typeof out.contactEmail === 'string' && out.contactEmail.length > 0
+      delete out.contactEmail
+    }
+    if ('briefing' in out) {
+      if (out.briefingBytes === undefined) out.briefingBytes = out.briefing === undefined || out.briefing === null ? 0 : JSON.stringify(out.briefing).length
+      delete out.briefing
+    }
+  }
+  return out
+}
+
+const DAY_MS = 86_400_000
+let lastPrune = 0
+
+/**
+ * Drops events older than EVENTS_RETENTION_DAYS (0 = keep everything). Runs lazily from logEvent at most
+ * once per day: no timers, so it is safe on Workers (where it is skipped: the log there is console only).
+ * Returns how many events were removed.
+ */
+export function pruneEvents(retentionDays = config.eventsRetentionDays, now = Date.now(), file = EVENTS_FILE): number {
+  if (isWorker || retentionDays <= 0) return 0
+  const cutoff = now - retentionDays * DAY_MS
+  try {
+    const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean)
+    const kept = lines.filter((l) => {
+      try {
+        return (JSON.parse(l) as AppEvent).at >= cutoff
+      } catch {
+        return false
+      }
+    })
+    if (kept.length === lines.length) return 0
+    const tmp = `${file}.tmp`
+    fs.writeFileSync(tmp, kept.length ? `${kept.join('\n')}\n` : '')
+    fs.renameSync(tmp, file)
+    return lines.length - kept.length
+  } catch {
+    return 0
+  }
+}
+
 export function logEvent(e: Omit<AppEvent, 'at'>) {
-  const line = JSON.stringify({ ...e, at: Date.now() })
+  const now = Date.now()
+  if (now - lastPrune > DAY_MS) {
+    lastPrune = now
+    pruneEvents(config.eventsRetentionDays, now)
+  }
+  const line = JSON.stringify({ ...sanitizeEvent(e), at: now })
   // Workers: /tmp is wiped on restart — the log line is kept by Workers Logs (dashboard → Workers → midflow-api → Logs).
   if (isWorker) console.log('[MIDFLOW event]', line)
-  fs.appendFile(EVENTS_FILE, `${line}\n`, (err) => {
-    if (err) console.log('[MIDFLOW event]', line)
-  })
+  try {
+    // Synchronous append so a concurrent prune (rewrite + rename) can never drop a line.
+    fs.appendFileSync(EVENTS_FILE, `${line}\n`)
+  } catch {
+    if (!isWorker) console.log('[MIDFLOW event]', line)
+  }
 }
 
 export function readEvents(sinceMs = 0): AppEvent[] {
@@ -104,6 +179,9 @@ export function metrics(days = 30) {
     }
   }
 
+  const unavailable = events.filter((e) => e.type === 'ai_unavailable')
+  const byKind = (k: string) => unavailable.filter((e) => e.aiErrorKind === k).length
+
   return {
     periodDays: days,
     generations: gens.length,
@@ -130,6 +208,9 @@ export function metrics(days = 30) {
       newVersions: count('new_version'),
       clientFallbacks: count('client_fallback'),
     },
+    /** Generations / rewrites answered with the template engine because the AI failed, by cause. */
+    aiUnavailable: { total: unavailable.length, transient: byKind('transient'), daily_cap: byKind('daily_cap'), config: byKind('config') },
+    reviewRequests: events.filter((e) => e.type === 'review_request').length,
     aiErrors: gens.filter((e) => e.aiError).slice(-10).map((e) => ({ at: e.at, error: e.aiError })),
     topIssues: Object.entries(issueCounts)
       .sort((a, b) => b[1] - a[1])

@@ -19,6 +19,7 @@
     "check:budget": "node server/tools/check-budget.ts",
     "photos:generate": "node --env-file-if-exists=.env server/tools/generate-example-photos.ts",
     "e2e:a11y": "playwright test e2e/a11y.spec.ts --project=desktop-chrome",
+    "e2e:backend": "playwright test e2e/backend.spec.ts e2e/baseline.spec.ts --project=desktop-chrome",
     "worker:dev": "wrangler dev --local",
     "worker:deploy": "wrangler deploy"
   },
@@ -28,6 +29,7 @@
     "@fontsource-variable/playfair-display": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@fontsource/dm-serif-display": "^5.3.0",
+    "@supabase/supabase-js": "^2.118.0",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
     "jszip": "^3.10.2",

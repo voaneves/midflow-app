@@ -23,9 +23,11 @@ export function InstagramIcon({ className }: { className?: string }) {
 
 export function StoriesIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className={className} aria-hidden>
-      <path d="M12 2.5a9.5 9.5 0 1 1-8.2 4.7" strokeDasharray="2.5 2.6" />
-      <path d="M12 2.5a9.5 9.5 0 0 1 8.2 14.3" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      {/* A portrait (9:16) screen with its story progress bar, and the next screens peeking out on both sides. */}
+      <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
+      <path d="M9.5 6h5" />
+      <path d="M3.5 7v10M20.5 7v10" />
     </svg>
   )
 }

@@ -6,7 +6,13 @@
     <meta name="theme-color" content="#0B1A24" />
     <meta name="color-scheme" content="light" />
 
-    <!-- SEO Primário -->
+    <!-- Mirrors the CSP header of server/server.ts (frame-ancestors is not supported in <meta>). The API is same-origin; Supabase (auth/DB) is allowed in connect-src and Stripe Checkout (top-level redirect) in form-action. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; base-uri 'self'; form-action 'self' https://checkout.stripe.com"
+    />
+
+    <!-- SEO Primário. The site origin in the URLs below must match SITE_URL in src/components/SEOHead.tsx. -->
     <title>MIDFLOW — Crie Posts e Stories Profissionais com IA em Minutos</title>
     <meta
       name="description"
@@ -18,7 +24,7 @@
     />
     <meta name="author" content="MIDFLOW" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <link rel="canonical" href="https://midflow.com.br/" />
+    <link rel="canonical" href="https://voaneves.com/midflow-app/" />
 
     <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:locale" content="pt_BR" />
@@ -28,12 +34,12 @@
       property="og:description"
       content="Transforme um briefing curto em posts para feed, sequências de Stories, legendas e hashtags com a cara da sua marca. Teste grátis sem cartão de crédito."
     />
-    <meta property="og:url" content="https://midflow.com.br/" />
+    <meta property="og:url" content="https://voaneves.com/midflow-app/" />
     <meta property="og:site_name" content="MIDFLOW" />
-    <meta property="og:image" content="https://midflow.com.br/midflow-logo.png" />
+    <meta property="og:image" content="https://voaneves.com/midflow-app/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="MIDFLOW — Estúdio de Conteúdo com IA" />
+    <meta property="og:image:alt" content="MIDFLOW — Estúdio de conteúdo para Instagram" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -42,7 +48,7 @@
       name="twitter:description"
       content="Transforme seu briefing em posts, Stories, legendas e hashtags com Inteligência Artificial para pequenas e médias empresas."
     />
-    <meta name="twitter:image" content="https://midflow.com.br/midflow-logo.png" />
+    <meta name="twitter:image" content="https://voaneves.com/midflow-app/og-image.png" />
 
     <!-- Favicon & PWA -->
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
@@ -69,20 +75,20 @@
         "@graph": [
           {
             "@type": "Organization",
-            "@id": "https://midflow.com.br/#organization",
+            "@id": "https://voaneves.com/midflow-app/#organization",
             "name": "MIDFLOW",
-            "url": "https://midflow.com.br",
-            "logo": "https://midflow.com.br/midflow-logo.png",
+            "url": "https://voaneves.com/midflow-app",
+            "logo": "https://voaneves.com/midflow-app/icons/icon-512.png",
             "sameAs": ["https://instagram.com/midflow.app"],
             "description": "Estúdio de conteúdo com Inteligência Artificial para pequenas e médias empresas."
           },
           {
             "@type": "SoftwareApplication",
-            "@id": "https://midflow.com.br/#software",
+            "@id": "https://voaneves.com/midflow-app/#software",
             "name": "MIDFLOW App",
             "applicationCategory": "BusinessApplication",
             "operatingSystem": "All",
-            "url": "https://midflow.com.br",
+            "url": "https://voaneves.com/midflow-app",
             "offers": [
               {
                 "@type": "Offer",
@@ -106,10 +112,10 @@
           },
           {
             "@type": "WebSite",
-            "@id": "https://midflow.com.br/#website",
-            "url": "https://midflow.com.br",
+            "@id": "https://voaneves.com/midflow-app/#website",
+            "url": "https://voaneves.com/midflow-app",
             "name": "MIDFLOW",
-            "publisher": { "@id": "https://midflow.com.br/#organization" },
+            "publisher": { "@id": "https://voaneves.com/midflow-app/#organization" },
             "inLanguage": "pt-BR"
           }
         ]

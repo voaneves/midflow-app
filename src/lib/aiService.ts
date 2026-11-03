@@ -1,5 +1,18 @@
 import { api } from './api'
-import type { Creative } from './types'
+import { authHeaders } from './backend'
+import { GenerateError } from './generation'
+import type { AiErrorKind, Creative } from './types'
+
+export const DAILY_IMAGE_LIMIT_MESSAGE = 'Você atingiu o limite diário de imagens com IA. Usamos uma foto de banco por enquanto.'
+export const DAILY_REWRITE_LIMIT_MESSAGE = 'O limite diário de textos com IA foi atingido. Reescrevemos com a versão padrão, sem IA.'
+
+/** Plan limit (402) and expired/missing session (401) are shown to the user instead of silently falling back. */
+async function throwIfDenied(res: Response): Promise<void> {
+  if (res.status !== 402 && res.status !== 401) return
+  const data = await res.json().catch(() => null)
+  if (res.status === 402) throw new GenerateError('quota', data?.error || 'Você chegou ao limite de conteúdos do seu plano neste mês.')
+  throw new GenerateError('auth', data?.error || 'Entre na sua conta para gerar conteúdo com IA.')
+}
 
 /**
  * Solicita ao servidor de IA a reescrita contextual de um post/story específico.
@@ -20,23 +33,28 @@ export async function rewriteCreativeWithAI(opts: {
   cta: string
   caption: string
   engine?: string
+  /** "account_required" = the visitor has no account, so the server answered with the default version. */
+  code?: string
+  /** Why the server answered with the template instead of AI ("daily_cap" = the daily AI budget is spent). */
+  aiErrorKind?: AiErrorKind
 }> {
   const { signal, ...body } = opts
   try {
     const res = await fetch(api('/api/rewrite'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders().catch(() => ({}))) },
       body: JSON.stringify(body),
       signal,
     })
+    await throwIfDenied(res)
     if (res.ok) {
       const json = await res.json()
       if (json.success && json.data?.headline) {
-        return { ...json.data, engine: json.engine }
+        return { ...json.data, engine: json.engine, code: json.code, aiErrorKind: json.aiErrorKind ?? undefined }
       }
     }
   } catch (e) {
-    if ((e as Error)?.name === 'AbortError') throw e
+    if ((e as Error)?.name === 'AbortError' || e instanceof GenerateError) throw e
     // Fallback local
   }
 
@@ -61,21 +79,25 @@ export async function generateCustomImageWithAI(opts: {
   seed?: number
   palette?: { dark: string; mid: string; light: string; accent: string; soft: string }
   signal?: AbortSignal
-}): Promise<string | null> {
+}): Promise<{ url: string; notice?: 'daily_user_limit' } | null> {
   const { signal, ...body } = opts
   try {
     const res = await fetch(api('/api/generate-image'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders().catch(() => ({}))) },
       body: JSON.stringify(body),
       signal,
     })
+    await throwIfDenied(res)
     if (res.ok) {
       const json = await res.json()
-      if (json.imageUrl) return json.imageUrl
+      if (json.code === 'account_required') throw new GenerateError('account', 'Crie uma conta gratuita para gerar imagens com IA.')
+      // Per-account daily cap on AI images: the server still sends a stock photo, flagged so the UI can say so.
+      const notice = json.code === 'daily_user_limit' ? ('daily_user_limit' as const) : undefined
+      if (json.imageUrl) return { url: json.imageUrl, notice }
     }
   } catch (e) {
-    if ((e as Error)?.name === 'AbortError') throw e
+    if ((e as Error)?.name === 'AbortError' || e instanceof GenerateError) throw e
   }
   return null
 }

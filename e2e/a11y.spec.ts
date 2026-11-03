@@ -54,7 +54,7 @@ test.describe('@a11y', () => {
       }
 
       // Quality verdict
-      await page.locator('button[aria-haspopup="dialog"]').filter({ hasText: /Qualidade|Criado com IA|Revise|Modelo/ }).first().click()
+      await page.locator('button[aria-haspopup="dialog"]').filter({ hasText: /Qualidade|Criado com IA|Revise|Versão padrão/ }).first().click()
       await expect(dialog).toBeVisible()
       await expectClean(page, `quality dialog @${width}`)
       await close()

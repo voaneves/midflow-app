@@ -41,11 +41,12 @@ function ToastCard({ t }: { t: ToastItem }) {
 /**
  * Rendered outside #root so it stays reachable (and announced) while a dialog makes the app inert.
  * Phones: bottom-center above the bottom nav and action bar. Desktop: top-right under the header.
+ * While a dialog is open (#root is inert) they move out of the way of its header and action buttons (see .toaster in index.css).
  */
 export function Toaster() {
   const items = useToasts((s) => s.items)
   const pos =
-    'pointer-events-none fixed inset-x-0 z-[80] flex flex-col items-center gap-2 px-4 bottom-[calc(var(--bottom-nav-h)+var(--action-bar-h)+12px+var(--safe-bottom))] lg:inset-x-auto lg:right-6 lg:bottom-auto lg:top-[calc(var(--header-h)+12px)] lg:items-end lg:px-0'
+    'toaster pointer-events-none fixed inset-x-0 z-[80] flex flex-col items-center gap-2 px-4 bottom-[calc(var(--bottom-nav-h)+var(--action-bar-h)+12px+var(--safe-bottom))] lg:inset-x-auto lg:right-6 lg:bottom-auto lg:top-[calc(var(--header-h)+12px)] lg:items-end lg:px-0'
   return createPortal(
     <div className={pos}>
       <div role="status" aria-live="polite" className="flex w-full flex-col items-center gap-2 lg:items-end">

@@ -18,6 +18,9 @@ export const PUBLIC_ROUTES = [
   ['landing', '/'],
   ['entrar', '/entrar'],
   ['cadastro', '/cadastro'],
+  ['privacidade', '/privacidade'],
+  ['termos', '/termos'],
+  ['painel', '/painel'],
 ] as const
 
 /** Opens the demo account (Studio Aurora) through the public login screen. */

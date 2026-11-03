@@ -296,7 +296,6 @@ export function Landing() {
       <SEOHead
         title="MIDFLOW · Crie Posts e Stories com IA para Redes Sociais"
         description="Crie posts de feed, carrosséis e sequências narrativas de Stories para o seu negócio com Inteligência Artificial. Inclui legendas, hashtags e calendário editorial."
-        canonical="https://midflow.com.br"
       />
 
       {/* Nav */}
@@ -339,7 +338,7 @@ export function Landing() {
                 <Link to="/entrar" className="hidden h-11 items-center px-4 text-base font-medium text-slate-700 hover:text-brand-700 sm:flex">
                   Entrar
                 </Link>
-                <Button onClick={() => nav('/cadastro')} className="hidden sm:inline-flex">
+                <Button onClick={() => nav('/cadastro')} className="max-sm:hidden">
                   Criar conta grátis
                 </Button>
               </>
@@ -685,6 +684,14 @@ export function Landing() {
           <span>© 2026 MIDFLOW · midflow.com.br · Todos os direitos reservados.</span>
           <span>Plataforma Inteligente de Conteúdo para Redes Sociais</span>
         </div>
+        <nav aria-label="Documentos legais" className="mx-auto mt-6 flex max-w-6xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium sm:justify-end">
+          <Link to="/privacidade" className="rounded text-slate-600 underline-offset-4 hover:text-ink hover:underline">
+            Privacidade
+          </Link>
+          <Link to="/termos" className="rounded text-slate-600 underline-offset-4 hover:text-ink hover:underline">
+            Termos de Uso
+          </Link>
+        </nav>
       </footer>
 
       {/* Modal: Artigos & Dicas de Social Media */}

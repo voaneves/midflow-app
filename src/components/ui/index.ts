@@ -4,7 +4,7 @@
  */
 export { cx, useIsDesktop, useIsPhone, useKeyboardFlag, useLongPress, useMediaQuery, usePref, useReducedMotion, useSavedIndicator } from './hooks'
 export { Button, IconButton, type ButtonProps, type ButtonVariant } from './button'
-export { CheckBadge, Checkbox, Chip, ChoiceGroup, Field, FieldError, fieldBase, Input, Label, Select, Textarea, Toggle, type ChoiceOption } from './form'
+export { CheckBadge, Checkbox, Chip, ChoiceGroup, Field, FieldError, fieldBase, Input, Label, PasswordInput, Select, Textarea, Toggle, type ChoiceOption } from './form'
 export { ConfirmDialog, Dialog, Modal, type DialogProps } from './overlay'
 export { useOverlay } from './useOverlay'
 export { Menu, Popover, type MenuItem } from './menu'

@@ -1,8 +1,12 @@
-import { AlertTriangle, Bell, Bot, Radio, RotateCcw, ShieldCheck, Sparkles, UserCheck } from 'lucide-react'
+import { AlertTriangle, Bell, Bot, CreditCard, MessageSquareWarning, Radio, RotateCcw, ShieldCheck, Sparkles, Trash2, UserCheck } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Badge, Button, ChoiceGroup, ConfirmDialog, cx, Field, Input, toast, Toggle, usePref } from '../../components/ui'
+import { Link, useNavigate } from 'react-router-dom'
+import { Badge, Button, ChoiceGroup, ConfirmDialog, cx, Dialog, Field, FieldError, Input, toast, Toggle, usePref } from '../../components/ui'
+import { ManageSubscriptionButton } from '../../components/ManageSubscription'
+import { useCanManageSubscription } from '../../lib/subscription'
+import { MyReviews } from '../../components/MyReviews'
 import { api } from '../../lib/api'
+import { deleteAccount, getBackend } from '../../lib/backend'
 import { useApp } from '../../lib/store'
 
 /** iOS-Settings-style group: a small heading above a rounded list of rows. */
@@ -16,6 +20,20 @@ function Group({ id, icon, title, hint, children, tone }: { id: string; icon: Re
       {hint && <p className="mt-2 px-1 text-caption text-fg-subtle">{hint}</p>}
     </section>
   )
+}
+
+/** Every localStorage key owned by the app: the persisted store plus the small `mf.*` preferences. */
+function clearAllLocalData() {
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && (k === 'midflow-storage-v3' || k.startsWith('mf.') || k.startsWith('midflow'))) keys.push(k)
+    }
+    keys.forEach((k) => localStorage.removeItem(k))
+  } catch {
+    /* storage blocked: nothing persisted to remove */
+  }
 }
 
 const NOTIFS = [
@@ -32,6 +50,10 @@ export function Settings() {
   const login = useApp((s) => s.login)
   const loadDemo = useApp((s) => s.loadDemo)
   const resetCreate = useApp((s) => s.resetCreate)
+  const logout = useApp((s) => s.logout)
+  // A real (cloud) account has a backend id. Demo and browser-only logins do not, and keep the browser-only wording.
+  const cloud = !!user?.id
+  const canManageSubscription = useCanManageSubscription()
 
   const [userName, setUserName] = useState(user?.name ?? '')
   const [userEmail, setUserEmail] = useState(user?.email ?? '')
@@ -41,6 +63,39 @@ export function Settings() {
   const [network, setNetwork] = usePref<'instagram' | 'whatsapp'>('mf.settings.network', 'instagram')
   const [confirmDemo, setConfirmDemo] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmWipe, setConfirmWipe] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteText, setDeleteText] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  const closeDelete = () => {
+    if (deleting) return
+    setConfirmDelete(false)
+    setDeleteText('')
+    setDeleteError('')
+  }
+
+  const removeAccount = async () => {
+    setDeleting(true)
+    setDeleteError('')
+    const res = await deleteAccount()
+    if (!res.ok) {
+      setDeleteError(res.error)
+      setDeleting(false)
+      return
+    }
+    // The server already removed the account: drop the local session and every copy kept on this device.
+    try {
+      await (await getBackend()).auth.signOut()
+    } catch {
+      /* the session died with the account */
+    }
+    nav('/', { replace: true })
+    logout()
+    clearAllLocalData()
+    toast('Sua conta foi excluída e seus dados foram apagados.')
+  }
 
   const saveAccount = (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,8 +129,24 @@ export function Settings() {
         </form>
       </Group>
 
+      {canManageSubscription && (
+        <Group id="st-billing" icon={<CreditCard className="size-4" aria-hidden />} title="Assinatura" hint="Você será levado ao ambiente seguro da Stripe, onde pode trocar o cartão, mudar de plano ou cancelar.">
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <p className="text-sm text-fg-muted">Atualize a forma de pagamento, veja suas faturas ou cancele quando quiser.</p>
+            <ManageSubscriptionButton variant="secondary" className="w-full sm:w-auto" />
+          </div>
+        </Group>
+      )}
+
       {/* Engine diagnostics are for the team, not customers: dev builds only (production: /api/status with ADMIN_TOKEN). */}
       {import.meta.env.DEV && <AIStatusCard />}
+
+      {/* Only real accounts (with a backend id) have requests stored on the server. */}
+      {user?.id && (
+        <Group id="st-reviews" icon={<MessageSquareWarning className="size-4" aria-hidden />} title="Minhas revisões" hint="Pedidos enviados com o botão “Solicitar revisão” na tela de criativos.">
+          <MyReviews />
+        </Group>
+      )}
 
       <Group id="st-publish" icon={<Radio className="size-4" aria-hidden />} title="Publicação" hint="Usado como padrão no assistente de publicação e no calendário.">
         <div className="grid gap-5 p-4 sm:p-5">
@@ -112,7 +183,7 @@ export function Settings() {
         </ul>
       </Group>
 
-      <Group id="st-data" icon={<RotateCcw className="size-4" aria-hidden />} title="Dados e demonstração" hint="Seus dados e criações ficam salvos neste navegador.">
+      <Group id="st-data" icon={<RotateCcw className="size-4" aria-hidden />} title="Dados e demonstração" hint={cloud ? 'Suas marcas e criações ficam guardadas na sua conta.' : 'Seus dados e criações ficam salvos neste navegador.'}>
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div>
             <p className="font-semibold">Reiniciar fluxo de criação</p>
@@ -125,16 +196,96 @@ export function Settings() {
       </Group>
 
       <Group id="st-danger" tone="danger" icon={<AlertTriangle className="size-4" aria-hidden />} title="Zona de risco">
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div>
-            <p className="font-semibold">Restaurar dados de demonstração</p>
-            <p className="text-sm text-fg-subtle">Substitui empresa, briefing, gerações e calendário pelo exemplo do Studio Aurora.</p>
+        {!cloud && (
+          <div className="flex flex-col gap-3 border-b border-red-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div>
+              <p className="font-semibold">Restaurar dados de demonstração</p>
+              <p className="text-sm text-fg-subtle">Substitui empresa, briefing, gerações e calendário pelo exemplo do Studio Aurora.</p>
+            </div>
+            <Button variant="danger" className="shrink-0" onClick={() => setConfirmDemo(true)}>
+              <Sparkles className="size-4" aria-hidden /> Restaurar
+            </Button>
           </div>
-          <Button variant="danger" className="shrink-0" onClick={() => setConfirmDemo(true)}>
-            <Sparkles className="size-4" aria-hidden /> Restaurar
-          </Button>
-        </div>
+        )}
+        {cloud ? (
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div>
+              <p className="font-semibold">Excluir minha conta</p>
+              <p className="text-sm text-fg-subtle">Apaga para sempre sua conta, marcas, criações, biblioteca e histórico, e cancela a assinatura, se houver. Você pode baixar suas peças antes.</p>
+            </div>
+            <Button variant="danger" className="shrink-0" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="size-4" aria-hidden /> Excluir minha conta
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div>
+              <p className="font-semibold">Excluir todos os meus dados</p>
+              <p className="text-sm text-fg-subtle">Apaga conta, marcas, briefing, criações, biblioteca, calendário e preferências guardados neste navegador.</p>
+            </div>
+            <Button variant="danger" className="shrink-0" onClick={() => setConfirmWipe(true)}>
+              <Trash2 className="size-4" aria-hidden /> Excluir tudo
+            </Button>
+          </div>
+        )}
       </Group>
+
+      <p className="-mt-3 px-1 text-caption text-fg-subtle">
+        Veja como tratamos seus dados na{' '}
+        <Link to="/privacidade" className="font-semibold text-brand-700 underline">
+          Política de Privacidade
+        </Link>{' '}
+        e nos{' '}
+        <Link to="/termos" className="font-semibold text-brand-700 underline">
+          Termos de Uso
+        </Link>
+        .
+      </p>
+
+      <Dialog
+        open={confirmDelete}
+        onClose={closeDelete}
+        title="Excluir sua conta?"
+        size="sm"
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={closeDelete} disabled={deleting} className="h-11 rounded-xl border border-line px-4 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
+              Cancelar
+            </button>
+            <Button variant="danger" onClick={removeAccount} loading={deleting} disabled={deleteText.trim() !== 'EXCLUIR'} className="h-11">
+              Excluir minha conta
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid gap-4 px-5 py-4 text-sm text-slate-700 md:px-6">
+          <p>
+            Sua conta, marcas, briefings, criações, biblioteca e pedidos de revisão serão apagados dos nossos servidores e a assinatura será cancelada. Essa ação não pode ser desfeita. Baixe antes as peças de que ainda precisa.
+          </p>
+          <Field label={<>Para confirmar, digite <b>EXCLUIR</b></>} id="st-delete-confirm">
+            <Input value={deleteText} onChange={(e) => setDeleteText(e.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} />
+          </Field>
+          <div role="alert">{deleteError && <FieldError>{deleteError}</FieldError>}</div>
+        </div>
+      </Dialog>
+
+      <ConfirmDialog
+        open={confirmWipe}
+        onClose={() => setConfirmWipe(false)}
+        title="Excluir todos os seus dados?"
+        confirmLabel="Excluir tudo"
+        danger
+        onConfirm={() => {
+          clearAllLocalData()
+          // Reload so the in-memory store cannot write the old state back to storage.
+          window.location.replace(window.location.pathname + window.location.search + '#/')
+          window.location.reload()
+        }}
+      >
+        <p className="text-sm text-fg-muted">
+          Conta, marcas, briefing, criações, biblioteca, calendário e preferências serão apagados deste navegador e você será desconectado. Essa ação não pode ser desfeita. Baixe antes as peças de que ainda precisa.
+        </p>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmReset}
@@ -269,7 +420,7 @@ function AIStatusCard() {
             {!status.aiEnabled && (
               <div className="rounded-xl bg-slate-50 p-3 text-caption text-fg-muted ring-1 ring-line">
                 Para ativar, o administrador define <code>GEMINI_API_KEY</code> no arquivo <code>.env</code> do servidor e reinicia. Enquanto isso, os conteúdos usam modelos prontos e aparecem marcados
-                como "Modelo de reserva".
+                como "Versão padrão".
               </div>
             )}
           </div>

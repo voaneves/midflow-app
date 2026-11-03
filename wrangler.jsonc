@@ -7,14 +7,55 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "voaneves.com/midflow-app/api/*", "zone_name": "voaneves.com" }],
-  // Non-secret settings. Secrets (GEMINI_API_KEY, CF_ACCOUNT_ID, CF_API_TOKEN, ADMIN_TOKEN) come from GitHub Secrets.
+  // Non-secret settings only. Everything else is uploaded by deploy.yml as Worker SECRETS (wrangler secret bulk): the keys and
+  // tokens (GEMINI_API_KEY, CF_AI_TOKEN, ADMIN_TOKEN, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, STRIPE_SECRET_KEY,
+  // STRIPE_WEBHOOK_SECRET, IMAGE_URL_SECRET; GitHub Environment "production") and also SUPABASE_URL, STRIPE_PRICE_* and APP_URL
+  // (read from GitHub Variables, but stored as Worker secrets, not as vars). Never put a key or token in "vars".
   "vars": {
     "NODE_ENV": "production",
     "AI_MODEL": "gemini-3.5-flash-lite",
     "AI_FALLBACK_MODELS": "gemini-3.1-flash-lite,gemini-3.5-flash",
     "AI_TIMEOUT_MS": "60000",
     "AI_MAX_RETRIES": "1",
-    "TRUST_PROXY": "true"
+    // Take the client IP only from CF-Connecting-IP (set by Cloudflare), never from a spoofable X-Forwarded-For.
+    "TRUST_PROXY": "cloudflare",
+    // Global daily ceilings on paid AI calls (all visitors together, per UTC day); over them the honest template/stock fallback answers.
+    "AI_DAILY_MAX_TEXT": "500",
+    "AI_DAILY_MAX_IMAGES": "1500",
+    // Rewrites have their own global budget (so they cannot starve /api/generate); per-account caps per UTC day.
+    "AI_DAILY_MAX_REWRITE": "300",
+    "AI_DAILY_MAX_REWRITE_PER_USER": "60",
+    "AI_DAILY_MAX_IMAGES_PER_USER": "40"
   },
+  // Per-IP burst limits enforced in worker/index.ts (fail open when a binding is missing).
+  // Workers Rate Limiting: "period" can only be 10 or 60 seconds; counters are per Cloudflare location.
+  // "namespace_id" is a free integer-as-string chosen by us (unique per account), not a secret.
+  "ratelimits": [
+    // Text generation, rewrite and editor image: 10 requests per minute per IP.
+    { "name": "RL_GENERATE", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    // AI card images: one briefing asks for ~8 at once, so allow a wider burst (30 per minute per IP).
+    { "name": "RL_IMAGE", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } },
+    // Sensitive routes (review requests, /api/admin/*, checkout, billing portal, account deletion): 20 requests per minute per IP.
+    { "name": "RL_SENSITIVE", "namespace_id": "1003", "simple": { "limit": 20, "period": 60 } }
+  ],
+  // Global daily AI budgets must be exact across isolates: one Durable Object per counter key (worker/counter.ts).
+  // SQLite-backed, so it also works on the free plan. Without this binding the Worker falls back to per-isolate memory counters.
+  "durable_objects": { "bindings": [{ "name": "COUNTERS", "class_name": "Counter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Counter"] }],
+  // GIT_SHA is injected at deploy time by .github/workflows/deploy.yml (wrangler deploy --var GIT_SHA:<sha>).
+
+  // ---------------------------------------------------------------------------------------------
+  // Future storage bindings (placeholders only; uncomment after creating the resource and pasting
+  // the real ID from the Cloudflare dashboard or `npx wrangler d1 create` / `npx wrangler kv namespace create`).
+  // Never commit secrets here; resource IDs are not secrets but must be real before enabling.
+  //
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "midflow", "database_id": "<D1_DATABASE_ID>" }
+  // ],
+  // "kv_namespaces": [
+  //   { "binding": "CACHE", "id": "<KV_NAMESPACE_ID>" }
+  // ],
+  // ---------------------------------------------------------------------------------------------
+
   "observability": { "enabled": true }
 }

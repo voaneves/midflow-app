@@ -1,55 +1,98 @@
-# MIDFLOW — clickable prototype
+# MIDFLOW
 
-AI content studio for small businesses: a short briefing becomes ready-to-post Instagram feed posts, Stories sequences, captions and hashtags.
-See **[plan.md](plan.md)** for the full plan and **`references/`** for the client's specs, mockups and logo.
+Content studio for small and medium businesses in Brazil. A short guided briefing becomes ready-to-publish Instagram feed posts, four-screen Stories sequences, captions and hashtags. The interface is in Brazilian Portuguese (`pt-BR`); the codebase, specs and this file are in English.
 
-## Run
+- **[PRODUCAO.md](PRODUCAO.md)**: operations guide in Portuguese (go-live checklist, environment variables, admin panel, quotas, data retention, legal items, what is still missing).
+- **[docs/backend-integration.md](docs/backend-integration.md)**: API contracts, authentication kinds, billing and review flows, Supabase migrations, security hardening.
+- **[plan.md](plan.md)**: UX/UI plan and status by phase.
+
+## Architecture
+
+```
+Browser
+ ├─ voaneves.com/midflow-app      static site (Vite + React 19) on GitHub Pages, no secrets
+ │    └─ Supabase JS (anon key, protected by Row Level Security): sign-in, brand and library sync
+ └─ voaneves.com/midflow-app/api  API: the same server/routes.ts, run either
+      ├─ on a Cloudflare Worker (worker/index.ts) with edge rate limits and Durable Object counters
+      └─ on a Node server (server/server.ts, Docker or any host)
+           ├─ Google Gemini (text), with an offline template engine as honest fallback
+           ├─ Cloudflare Workers AI (images), Pixabay and an internal catalog as fallbacks
+           ├─ Supabase (Auth, Postgres, RLS; service role on the server only)
+           └─ Stripe (Checkout and webhooks)
+```
+
+Without Supabase or Stripe configured, the app runs anonymously with local storage, with no quotas, billing or review queue. Every backend piece is optional.
+
+## Run locally
 
 ```bash
 npm install
-cp .env.example .env     # set GEMINI_API_KEY (server-side only)
-npm run dev              # http://localhost:5173 — front-end + /api
-npm run build && npm start   # production server on :3000
-npm test                 # quality-gate tests
-npm run eval             # real-model quality evaluation
-npm run check:budget     # after build: initial JS ≤ 180 KB gzip, CSS ≤ 30 KB, lazy chunk ≤ 60 KB
+cp .env.example .env     # set GEMINI_API_KEY (server-side only); ADMIN_TOKEN needs at least 32 characters
+npm run dev              # http://localhost:5173: front end and /api
+npm run build && npm start   # production build served by the Node server on :3000
 ```
 
-**Production / POC operations (Portuguese): see [PRODUCAO.md](PRODUCAO.md)** — deploy (Docker), quality pipeline, POC metrics, security, what is still missing.
+Requires Node 22.18 or newer (CI uses Node 24).
 
-Shortcut: on the landing page click **Ver demonstração** to open the pre-filled beauty-salon account (Studio Aurora).
+## Scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Vite dev server with the API |
+| `npm run build` | Type-check and production build (`dist/`) |
+| `npm start` | Node production server (loads `.env`) |
+| `npm run lint` | oxlint |
+| `npm run typecheck` | `tsc -b` |
+| `npm test` | Unit and route tests (`node --test server/tests/*.test.ts`) |
+| `npm run e2e:a11y` | Playwright + axe accessibility suite (desktop Chrome project; starts its own dev server with AI disabled) |
+| `npm run eval` | Quality evaluation against the real model (fails below an average score of 85) |
+| `npm run check:ai` / `check:image` | Smoke test of the text key and of one generated image |
+| `npm run check:budget` | Bundle budget after build (initial JS ≤ 180 KB gzip, CSS ≤ 30 KB, largest lazy chunk ≤ 60 KB) |
+| `npm run photos:generate` | Regenerates the example photo library |
+| `npm run worker:dev` / `worker:deploy` | Run or deploy the Cloudflare Worker (`wrangler`) |
+
+## Tests
+
+| Suite | Command | Notes |
+|---|---|---|
+| Unit and route tests | `npm test` | Quality gate, auth (HS256, ES256/RS256 with a fake JWKS), billing and webhooks, quotas, review and staff rules, AI health, account deletion. Uses an in-memory Supabase and Stripe fake |
+| Accessibility | `npm run e2e:a11y` | axe scan of every route and main dialogs at 360, 768 and 1280 px |
+| Backend journeys | `npx playwright test e2e/backend.spec.ts` | Browser flows for retries, daily cap and plan-limit messages (no npm script) |
+| Baseline screens | `npx playwright test e2e/baseline.spec.ts` | Screenshots and scores of the current screens (no npm script) |
+| Access model | `supabase start`, `supabase db reset`, `supabase test db` | pgTAP checks in `supabase/tests/rls.sql`. Needs the Supabase CLI and a local stack; not run in CI |
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests, build, the bundle budget and the accessibility suite on every pull request. `deploy.yml` runs lint, tests and typecheck on every push to `main` before deploying, and the site job runs the build and the bundle budget.
 
 ## Deploy
 
-- Every push to `main` runs `.github/workflows/deploy.yml`: checks → API as a Cloudflare Worker (`voaneves.com/midflow-app/api/*`, secrets from GitHub Secrets) → site on GitHub Pages (no secrets). Setup: PRODUCAO.md §3.1.
-- Alternative: one Node server / Docker for both — PRODUCAO.md §3.2.
-- `.github/workflows/ci.yml` runs lint, tests, build and the performance budget on pull requests.
+- Every push to `main` runs `.github/workflows/deploy.yml`: checks, then the API as a Cloudflare Worker (secrets from the `production` environment), then the site on GitHub Pages.
+- The API can also run as one Node container (`Dockerfile`).
+- Setup, secrets and variables: see [PRODUCAO.md](PRODUCAO.md) §9 (go-live checklist) and §10 (environment variables).
 
 ## Stack
 
-Vite · React 19 · TypeScript · Tailwind CSS v4 · React Router 7 · Zustand (persisted to localStorage) · lucide-react · html-to-image + JSZip (PNG/ZIP export) · self-hosted fonts.
-Pages and the creative editor are code-split (route-level `lazy`); `html-to-image` and JSZip load on first export.
-Installable PWA: `public/manifest.webmanifest` + `public/icons/`, and a service worker generated at build time (`src/pwa/sw.js`, `pwa` plugin in `vite.config.ts`) that precaches the app shell for offline use and never caches `/api`.
-Motion is plain CSS (`src/index.css` → *Motion*) plus `src/components/motion.tsx` (`Reveal` on scroll, `CountUp`); everything respects `prefers-reduced-motion`.
+Vite · React 19 · TypeScript · Tailwind CSS v4 · React Router 7 (hash routing) · Zustand (persisted to localStorage, synced to Supabase when signed in) · lucide-react · html-to-image and JSZip for PNG and ZIP export · self-hosted fonts · Supabase JS (lazy-loaded) · Stripe Checkout · Cloudflare Workers with Durable Objects and Workers Rate Limiting.
+
+The creative editor and the pages are code-split. The app is an installable PWA: the service worker precaches the app shell (`src/pwa/sw.js`) and never caches `/api`.
 
 ## Where things are
 
 | Path | What |
 |---|---|
-| `src/lib/data.ts` | Segments, theme catalog (copy banks), styles, tones, objectives, plans |
-| `server/ai/*` | AI pipeline: prompt + schema, model call with retries, quality gate, repair round |
-| `server/routes.ts`, `server/server.ts` | API (generate, rewrite, image, feedback, metrics) and production server |
-| `src/lib/generator.ts` | Offline template generator (used only when no server is reachable) |
-| `src/lib/store.ts` | App state (brand, briefing, content, style, generations, library, plan) + demo seed |
-| `src/lib/color.ts` | Brand colors → role palette (dark/mid/soft/light/accent) |
-| `src/components/creative/Creative.tsx` | The renderer: any post/story in any of the 6 styles × 3 formats, drawn on a 1080-px canvas |
-| `src/components/creative/Editor.tsx` | Edit modal (text, layout, palette, photo, caption) |
-| `src/components/creative/parts.tsx` | Instagram phone mockup, result tiles, export modal, color swatches |
-| `src/pages/Landing.tsx`, `Auth.tsx` | Public pages |
-| `src/pages/app/create/*` | Steps 1–4 (Briefing, Conteúdo, Estilo, Gerar) |
-| `src/pages/app/*` | Dashboard, Meus posts, Biblioteca, Minha marca, Planos, Configurações, Calendário/Relatórios (preview) |
-| `src/assets/photos` | Photos cropped from the client's mockups (placeholder imagery) |
+| `src/lib/data.ts` | Segments, theme catalog, styles, tones, objectives, plan definitions |
+| `src/lib/backend/` | Auth and repository adapters (local and Supabase), sync, plan limits shared with the server |
+| `src/lib/store.ts` | App state: brand, briefing, content, style, generations, library, plan |
+| `server/routes.ts`, `server/server.ts` | API routes and the Node production server |
+| `server/ai/*` | Prompt and schema, model calls with retries, quality gate, repair round |
+| `server/authz.ts`, `server/auth.ts` | Caller identification, staff roles, token verification |
+| `server/billing.ts`, `server/reviews.ts`, `server/aihealth.ts` | Stripe, review queue, AI health |
+| `server/db/` | Service-role access to Supabase |
+| `worker/index.ts` | Cloudflare Worker entry: edge rate limits, shared counters |
+| `src/components/creative/Creative.tsx` | The renderer: every post and story, in every style and format, drawn on a 1080-px canvas |
+| `src/components/creative/Editor.tsx` | Creative editor (text, layout, palette, photo, caption) |
+| `src/pages/admin/` | Staff panel at `#/painel`: reviews, AI health, metrics, team |
+| `supabase/migrations/` | Database schema, RLS, security hardening, quota reservation |
 
-## Limits
+## Status
 
-See PRODUCAO.md §7 (auth, billing, Instagram publishing and multi-device data are not implemented yet).
+Remaining items for the commercial release are listed in [PRODUCAO.md](PRODUCAO.md) §7 and in [plan.md](plan.md) §10.1.

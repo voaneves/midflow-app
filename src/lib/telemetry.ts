@@ -47,8 +47,8 @@ export function engineLabel(engine?: string): { label: string; isAI: boolean } {
     case 'openai':
       return { label: 'Criado com IA', isAI: true }
     case 'template':
-      return { label: 'Modelo de reserva', isAI: false }
+      return { label: 'Versão padrão (IA indisponível no momento)', isAI: false }
     default:
-      return { label: 'Modelo offline', isAI: false }
+      return { label: 'Versão padrão (modo offline, sem IA)', isAI: false }
   }
 }
