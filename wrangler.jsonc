@@ -16,6 +16,8 @@
     "AI_MODEL": "gemini-3.5-flash-lite",
     "AI_FALLBACK_MODELS": "gemini-3.1-flash-lite,gemini-3.5-flash",
     "AI_TIMEOUT_MS": "60000",
+    // Gemini 3+ reasoning depth. The model default thinks for tens of seconds on the full pack.
+    "AI_THINKING_LEVEL": "low",
     "AI_MAX_RETRIES": "1",
     // Take the client IP only from CF-Connecting-IP (set by Cloudflare), never from a spoofable X-Forwarded-For.
     "TRUST_PROXY": "cloudflare",

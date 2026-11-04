@@ -361,7 +361,8 @@ Tipos: **Segredo** fica no GitHub (environment `production`) ou no `.env`, e vai
 | `AI_PROVIDER` | Config | primeira chave encontrada | `gemini`, `openai` ou `none` |
 | `AI_MODEL` | Config | `gemini-3.5-flash-lite` (OpenAI: `gpt-4o-mini`) | Modelo principal de texto. Mesmo valor no Worker |
 | `AI_FALLBACK_MODELS` | Config | `gemini-3.1-flash-lite,gemini-3.5-flash` | Modelos de reserva, em ordem, quando o principal tem cota ou está sobrecarregado |
-| `AI_TIMEOUT_MS` | Config | `90000` (Worker: `60000`) | Tempo máximo de uma chamada ao modelo |
+| `AI_TIMEOUT_MS` | Config | `90000` (Worker: `60000`) | Tempo máximo de uma chamada ao modelo. Se estourar, passa direto ao próximo modelo, sem repetir o lento |
+| `AI_THINKING_LEVEL` | Config | `low` | Raciocínio do Gemini 3+ (`minimal`, `low`, `medium`, `high`; vazio = padrão do modelo, bem mais lento). Se o modelo recusar o valor, a chamada é refeita sem ele |
 | `AI_MAX_RETRIES` | Config | `2` (Worker: `1`) | Novas tentativas de uma chamada |
 | `AI_MIN_QUALITY` | Config | `85` | Nota mínima (0–100) antes de a IA revisar o próprio texto |
 | `AI_REPAIR_ROUNDS` | Config | `1` | Rodadas de correção quando a nota fica abaixo do mínimo |

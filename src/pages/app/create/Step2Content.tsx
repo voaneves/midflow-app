@@ -1,5 +1,5 @@
 import { ArrowRight, GraduationCap, MoreHorizontal, Plus, RefreshCw, Star, Tag, Users } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Creative } from '../../../components/creative/Creative'
 import { useLook } from '../../../components/creative/helpers'
@@ -32,6 +32,11 @@ export function Step2Content() {
   const seg = segmentDef(segment)
   const themes = cat === 'meus' ? [] : themesFor(segment, cat, cat === 'ia' ? seed : 0)
   const selected = content.themeId === 'custom' ? null : findTheme(segment, content.themeId)
+  // A theme left over from another segment (e.g. the beauty demo's "cabelo") must not reach the AI.
+  const staleTheme = !!content.themeId && content.themeId !== 'custom' && !selected
+  useEffect(() => {
+    if (staleTheme) set({ themeId: null })
+  }, [staleTheme, set])
   const ex = useExamples({
     segment, themeId: content.themeId, customTheme: content.customTheme, objective: content.objective, tones: briefing.tones,
     style: look.style, palette: look.palette, format: look.format, seed, brandName: brand.name, handle: brand.handle, city: briefing.location || brand.city,
@@ -45,7 +50,7 @@ export function Step2Content() {
   const noFormat = !content.posts && !content.stories
 
   const next = () => {
-    if (!content.themeId) {
+    if (!content.themeId || staleTheme) {
       const pickT = themesFor(segment, 'ia', seed)[0]
       set({ themeId: pickT.id })
       toast(`A IA escolheu o tema “${pickT.label}” para você`, 'info')

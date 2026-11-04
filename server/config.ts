@@ -92,6 +92,11 @@ export const config = {
       .filter(Boolean),
     /** Gemini image model (paid tier only). Empty disables Gemini images. */
     imageModel: (process.env.AI_IMAGE_MODEL ?? 'gemini-3.1-flash-lite-image').trim(),
+    /**
+     * Gemini 3+ reasoning depth: minimal | low | medium | high. Empty = model default (slow: tens of seconds
+     * on the full pack schema). "low" keeps the copy quality and answers in a few seconds.
+     */
+    thinkingLevel: (process.env.AI_THINKING_LEVEL ?? 'low').trim().toLowerCase(),
     timeoutMs: num('AI_TIMEOUT_MS', 90_000),
     maxRetries: num('AI_MAX_RETRIES', 2),
     /** Minimum quality score (0–100) a pack must reach before we stop repairing it. */

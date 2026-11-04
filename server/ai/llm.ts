@@ -53,24 +53,38 @@ function describe(status: number | undefined, text: string, model: string): stri
   return text.slice(0, 200) || 'Falha desconhecida no provedor de IA.'
 }
 
+/** thinkingLevel only exists on Gemini 3 and later; older models reject it. */
+export const supportsThinkingLevel = (model: string) => /^gemini-([3-9]|\d{2,})/i.test(model)
+
 async function callGemini(req: LLMRequest, signal: AbortSignal, model: string) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
-  const res = await fetch(url, {
-    method: 'POST',
-    // Key in a header, not the URL, so it never shows up in proxy/access logs.
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.ai.geminiKey },
-    signal,
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: req.system }] },
-      contents: [{ role: 'user', parts: [{ text: req.user }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        ...(req.schema ? { responseSchema: req.schema } : {}),
-        temperature: req.temperature ?? 0.85,
-      },
-    }),
-  })
-  const text = await res.text()
+  const level = config.ai.thinkingLevel
+  const send = (withThinking: boolean) =>
+    fetch(url, {
+      method: 'POST',
+      // Key in a header, not the URL, so it never shows up in proxy/access logs.
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.ai.geminiKey },
+      signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: req.system }] },
+        contents: [{ role: 'user', parts: [{ text: req.user }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          ...(req.schema ? { responseSchema: req.schema } : {}),
+          temperature: req.temperature ?? 0.85,
+          ...(withThinking ? { thinkingConfig: { thinkingLevel: level } } : {}),
+        },
+      }),
+    })
+  const useThinking = !!level && supportsThinkingLevel(model)
+  let res = await send(useThinking)
+  let text = await res.text()
+  // A model that doesn't accept this thinking level answers 400: retry once with the model default.
+  if (useThinking && res.status === 400 && /thinking/i.test(text)) {
+    console.warn(`[MIDFLOW AI] ${model} recusou thinkingLevel "${level}" — usando o padrão do modelo.`)
+    res = await send(false)
+    text = await res.text()
+  }
   if (!res.ok) return { ok: false as const, status: res.status, text }
   const json = JSON.parse(text)
   const parts: any[] = json.candidates?.[0]?.content?.parts ?? []
@@ -147,8 +161,11 @@ export async function callLLM(req: LLMRequest): Promise<LLMResult> {
         // 429 = quota: retrying the same model right away won't help, go to the next one.
         if (!RETRYABLE.has(r.status) || r.status === 429) break
       } catch (err: any) {
-        lastStatus = err?.name === 'AbortError' ? 408 : undefined
-        lastError = err?.name === 'AbortError' ? `Tempo limite de ${config.ai.timeoutMs / 1000}s excedido.` : String(err?.message || err)
+        const timedOut = err?.name === 'AbortError'
+        lastStatus = timedOut ? 408 : undefined
+        lastError = timedOut ? `Tempo limite de ${config.ai.timeoutMs / 1000}s excedido.` : String(err?.message || err)
+        // A model that just used the whole timeout will likely do it again: go straight to the next model.
+        if (timedOut) break
       } finally {
         clearTimeout(timer)
       }

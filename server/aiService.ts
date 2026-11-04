@@ -174,7 +174,14 @@ export const THEME_LABELS_MAP: Record<string, string> = {
 export function themeLabelOf(segment: string | undefined, themeId: string | undefined): string | undefined {
   if (!themeId) return undefined
   const seg = (segment || '').toLowerCase() === 'padaria' ? 'alimentacao' : (segment || '').toLowerCase()
-  return SEGMENT_THEME_LABELS[seg]?.[themeId] ?? THEME_LABELS_MAP[themeId]
+  const own = SEGMENT_THEME_LABELS[seg]?.[themeId]
+  if (own) return own
+  // A theme that belongs only to another niche (e.g. "cabelo" sent for a consultancy) gets no label,
+  // so the prompt falls back to the briefing instead of steering the AI to the wrong business.
+  const foreign = Object.entries(SEGMENT_THEME_LABELS).some(([s, labels]) => s !== seg && themeId in labels)
+  const shared = Object.entries(SEGMENT_THEME_LABELS).filter(([, labels]) => themeId in labels).length > 1
+  if (SEGMENT_THEME_LABELS[seg] && foreign && !shared) return undefined
+  return THEME_LABELS_MAP[themeId]
 }
 
 /**
