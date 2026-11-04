@@ -20,6 +20,8 @@ export function ResetPassword() {
   const [pass, setPass] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
+  const [passError, setPassError] = useState('')
+  const [confirmError, setConfirmError] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -41,8 +43,14 @@ export function ResetPassword() {
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
-    if (pass.length < 6) return setError('A senha precisa ter pelo menos 6 caracteres.')
-    if (pass !== confirm) return setError('As senhas não são iguais. Digite a mesma senha nos dois campos.')
+    const short = pass.length < 6 ? (pass ? 'A senha precisa ter pelo menos 6 caracteres.' : 'Digite a nova senha.') : ''
+    const mismatch = !short && pass !== confirm ? 'As senhas não são iguais. Digite a mesma senha nos dois campos.' : ''
+    setPassError(short)
+    setConfirmError(mismatch)
+    if (short || mismatch) {
+      document.getElementById(short ? 'np-pass' : 'np-confirm')?.focus()
+      return
+    }
     setBusy(true)
     try {
       const { auth } = await getBackend()
@@ -96,13 +104,15 @@ export function ResetPassword() {
                 <Label htmlFor="np-pass" required>
                   Nova senha
                 </Label>
-                <PasswordInput id="np-pass" required minLength={6} autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} icon={<Lock className="size-4" />} placeholder="Mínimo de 6 caracteres" />
+                <PasswordInput id="np-pass" required minLength={6} autoComplete="new-password" value={pass} onChange={(e) => (setPass(e.target.value), setPassError(''))} aria-invalid={passError ? true : undefined} aria-describedby={passError ? 'np-pass-err' : undefined} icon={<Lock className="size-4" />} placeholder="Mínimo de 6 caracteres" />
+                {passError && <FieldError id="np-pass-err">{passError}</FieldError>}
               </div>
               <div>
                 <Label htmlFor="np-confirm" required>
                   Repita a nova senha
                 </Label>
-                <PasswordInput id="np-confirm" required minLength={6} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} icon={<Lock className="size-4" />} placeholder="Digite a senha de novo" />
+                <PasswordInput id="np-confirm" required minLength={6} autoComplete="new-password" value={confirm} onChange={(e) => (setConfirm(e.target.value), setConfirmError(''))} aria-invalid={confirmError ? true : undefined} aria-describedby={confirmError ? 'np-confirm-err' : undefined} icon={<Lock className="size-4" />} placeholder="Digite a senha de novo" />
+                {confirmError && <FieldError id="np-confirm-err">{confirmError}</FieldError>}
               </div>
               <div role="alert">{error && <FieldError>{error}</FieldError>}</div>
               <Button type="submit" size="lg" loading={busy} className="mt-2 w-full">

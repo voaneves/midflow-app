@@ -99,7 +99,7 @@ Request unchanged. `/api/generate` response:
   "generation": { "...": "as before", "engine": "gemini" | "openai" | "template" },
   "aiErrorKind": null | "transient" | "daily_cap" | "config",
   "retryable": false,            // true only when aiErrorKind === "transient"
-  "usage": { "plan": "start", "used": 5, "limit": 20 }   // only for signed-in accounts with the database configured
+  "usage": { "plan": "free", "used": 5, "limit": 5 }   // only for signed-in accounts with the database configured; plan is free | start | pro | business
 }
 ```
 
@@ -107,6 +107,7 @@ Request unchanged. `/api/generate` response:
 
 - When the AI fails the answer is always `200` with the honest template result (`engine: "template"`). `AI_REQUIRE_LLM` is deprecated and ignored (no more `503`).
 - `transient`: timeout, 5xx, provider rate limit or per-minute quota, answer below the quality bar. `daily_cap`: our own `AI_DAILY_MAX_TEXT` budget. `config`: missing key, rejected key or retired model.
+- Anonymous callers in `ANON_AI=template` get the template with `code: "account_required"` and `aiErrorKind: null` (no account is not an AI failure, and it is not a daily cap); the client offers sign-up.
 - No template result is charged, whatever the kind (the client retries a `transient` one by itself; only AI-delivered content counts). Rewrites are never charged.
 - Per-user daily caps: `/api/rewrite` over `AI_DAILY_MAX_REWRITE_PER_USER` answers `engine: "template"`, `aiErrorKind: "daily_cap"`, `retryable: false`. `/api/generate-image` over `AI_DAILY_MAX_IMAGES_PER_USER` answers `{ success: true, imageUrl: <unsigned stock url>, aiEnabled: false, code: "daily_user_limit" }`. The same per-user counter is charged for each signed card image URL `/api/generate` issues (8 per pack); cards past the cap get stock photos, the pack itself is complete. Without that, an uncharged template answer could be requested over and over to mint signed AI image URLs.
 - Signed image URLs are canonical: `/api/image` emits `<params sorted by key>&sig=<hmac>` and honors the paid model only for exactly that spelling (a reordered or re-encoded query is answered with the stock photo), and the Worker's edge cache key is the same normalized URL. One signed URL therefore cannot fan out into unlimited cache misses.
@@ -117,10 +118,16 @@ Request unchanged. `/api/generate` response:
 Signed-in account + Supabase configured: before any paid AI call the server resolves the plan (`effectivePlan`) and the month's usage (`usage_counters`). If `cost > remaining`:
 
 ```jsonc
-// 402
+// 402, free plan (accounts without an entitled subscription: 5 contents per month = one full pack)
+{ "error": "Você já usou os 5 conteúdos grátis deste mês. Assine um plano para continuar criando. Seus conteúdos grátis renovam no dia 1º.",
+  "code": "quota_exceeded", "plan": "free", "limit": 5, "used": 5 }
+
+// 402, paid plan (message unchanged)
 { "error": "Você já usou os 20 conteúdos do plano Start neste mês. Faça upgrade para continuar.",
   "code": "quota_exceeded", "plan": "start", "limit": 20, "used": 18 }
 ```
+
+`free` is a limit, never a stored plan: `subscriptions.plan` only holds `start | pro | business`, and an account without a row (or with one that is not `active`, `trialing` or `past_due`) resolves to `free` (`effectiveBillingPlan`).
 
 `/api/generate` costs `4 posts + 1 Stories sequence = 5` (`generationCost`), is reserved **atomically** before any paid call (`public.reserve_usage`: check and increment in one statement, so parallel requests can never pass the limit; over the limit answers `402`). When the answer is ready the reservation is settled with `public.refund_usage`: **only AI-delivered content is charged**, so any template answer (`transient`, `daily_cap` or `config`) gives the whole reservation back, and an exception after reserving refunds it too. `/api/rewrite` and `/api/generate-image` need at least 1 unit left but are not charged. `GET /api/image` cannot carry headers (it is an `<img src>`), so it is not metered per account.
 
@@ -128,7 +135,7 @@ If the database **answers with an error** (a rejected call, a missing function, 
 
 ### Billing
 
-- `POST /api/billing/checkout` body `{ plan: "start"|"pro"|"business", interval?: "month"|"year" }`, Bearer required. `200 {url}`; `401` without a valid token; `400` bad plan; `409` (pt-BR) when the account already has an entitled subscription (`active`, `trialing`, `past_due`) with a Stripe subscription id: plan changes and cancellation do not go through a second Checkout; `503 {error}` when Stripe or Supabase is not configured or the plan has no price id; `502` when Stripe fails. Rate limit: `RATE_BILLING_PER_HOUR` (30).
+- `POST /api/billing/checkout` body `{ plan: "start"|"pro"|"business", interval?: "month"|"year" }`, Bearer required. `200 {url}`; `401` without a valid token; `400` bad plan (`free` is not for sale and is rejected too); `409` (pt-BR) when the account already has an entitled subscription (`active`, `trialing`, `past_due`) with a Stripe subscription id: plan changes and cancellation do not go through a second Checkout; `503 {error}` when Stripe or Supabase is not configured or the plan has no price id; `502` when Stripe fails. Rate limit: `RATE_BILLING_PER_HOUR` (30).
 - `POST /api/billing/portal`, Bearer required, no body. Opens a Stripe Customer Portal session (`POST /v1/billing_portal/sessions`) for the customer id stored in `subscriptions` (never one from the browser) with `return_url` = `${APP_URL}/#/app/config`, and answers `200 {url}`. `401` without a valid token; `404 "Nenhuma assinatura encontrada."` when the account has no Stripe customer; `503` when Stripe or Supabase is not configured; `502` when Stripe fails (the portal needs a configuration saved once in the Stripe dashboard, Settings, Billing, Customer portal). Shares `RATE_BILLING_PER_HOUR` with checkout. The checkout `409` message points the customer to "Gerenciar assinatura".
 - `POST /api/billing/webhook`: raw body (cap 256 KB, `413` above), `Stripe-Signature` header, no auth/CORS. `400 {error: reason}` for an invalid signature; `200 {received:true}`; `200 {received:true, duplicate:true}` for a replay of an event whose claim has `processed_at` set; a claim that is **in flight** (claimed less than 5 minutes ago, not processed yet) answers `503 {error:"retry"}` so Stripe retries instead of treating an event that may still fail as done; a claim never marked processed and older than 5 minutes is processed again; `200 {received:true, ignored:true}` when the database rejects the event with a unique violation (a Stripe customer / subscription id already belongs to another account row): it is logged without ids and not retried; `500 {error:"retry"}` after releasing the claim when persisting fails so Stripe retries; `503` when not configured. The body and the signature are never logged.
 
@@ -218,7 +225,7 @@ Nothing on the API enforces `profiles` per plan yet; `addBrand` in the client do
 - Send `Authorization` from `authHeaders()` on generate/rewrite/review/billing calls.
 - Retry `retryable: true` responses a few times, then keep the template result and tell the customer honestly it is the fallback; "Solicitar revisão" posts to `/api/review`.
 - On `402` with `code: "quota_exceeded"` show the Plans upsell.
-- Adopt `usage` from `/api/generate` when present. The store does this for signed-in accounts (`user.id`): `used` and `plan` come from the server. Demo and browser-only logins keep counting locally. `refreshPlan` (after hydrate and after Checkout) reads `usage_counters` and the effective plan, so a Start account with no `subscriptions` row still gets its real monthly usage.
+- Adopt `usage` from `/api/generate` when present. The store does this for signed-in accounts (`user.id`): `used` and `plan` come from the server. Demo and browser-only logins keep counting locally. `refreshPlan` (after hydrate and after Checkout) reads `usage_counters` and the effective plan, so a free account with no `subscriptions` row still gets its real monthly usage.
 
 ### Client wiring: `src/pages/Auth.tsx` (and `Settings.tsx`)
 
@@ -273,10 +280,10 @@ RLS summary: users read and write only their own `brands`, `generations`, `libra
 
 ## Behaviour notes
 
-- A subscription that is not `active`, `trialing` or `past_due` resolves to the Start allowance (`effectivePlan`), matching the app where every new account starts on Start.
+- A subscription that is not `active`, `trialing` or `past_due` resolves to the free plan (5 contents per month, `effectivePlan`), matching the app where every new account starts on Grátis.
 - Webhook handling is idempotent three ways: event ids are claimed in `stripe_events` (marked `processed_at` after success; an unfinished claim older than 5 minutes is retried), the subscription write is an upsert on `user_id`, and `apply_subscription_event` ignores an event whose Stripe `created` is older than `subscriptions.last_event_at`.
 - Out-of-order deliveries are handled: a late event with an older `created` does not roll the subscription back (events in the same second are applied in arrival order). The plan comes from the Stripe price id (`STRIPE_PRICE_*`) first and from `metadata.plan` only when the price is not recognised, because metadata can be edited in the Stripe dashboard.
-- The browser never sends prices or amounts. It names a plan (`start`, `pro`, `business`) and an interval; the server maps them to configured price ids.
+- The browser never sends prices or amounts. It names a paid plan (`start`, `pro`, `business`; `free` is rejected) and an interval; the server maps them to configured price ids.
 - Checkout returns to `/#/app/planos?checkout=success`. Plans then re-reads plan and usage a few times while the webhook lands.
 - The API now enforces quotas for signed-in accounts (see Quota). The `used` counter in the UI is overwritten by `usage` from `/api/generate` and by `usage_counters` whenever the plan is refreshed.
 - Staff roles live in `staff_members`; the shared `ADMIN_TOKEN` is a break-glass admin only. Rotate it if it was ever shared.

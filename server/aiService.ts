@@ -1,4 +1,5 @@
 import { callLLM } from './ai/llm.ts'
+import { fillVoice, voiceFor, type SegmentVoice } from './templateVoices.ts'
 
 export interface AIGenerateRequest {
   params: {
@@ -44,18 +45,111 @@ export interface AIRewriteRequest {
 
 
 
+/**
+ * Rótulos de tema por segmento. Os ids de tema se repetem entre segmentos ("bastidores", "depoimentos", "dicas"…),
+ * então o rótulo depende do par segmento + tema: "Preparo Artesanal nos Bastidores" só faz sentido numa cozinha.
+ */
+const SEGMENT_THEME_LABELS: Record<string, Record<string, string>> = {
+  beleza: {
+    cabelo: 'Cuidados e Tratamentos Capilares',
+    estetica: 'Estética Facial e Skincare',
+    transformacoes: 'Transformações Antes e Depois',
+    produtos: 'Produtos Profissionais & Home Care',
+    depoimentos: 'Depoimentos e Experiência Real',
+    agendamentos: 'Agenda Aberta da Semana',
+    equipe: 'Bastidores e Especialistas',
+    unhas: 'Unhas e Manicure em Destaque',
+    datas: 'Datas Especiais e Ofertas',
+  },
+  alimentacao: {
+    prato: 'Prato em Destaque da Casa',
+    combo: 'Combo Especial da Semana',
+    cafe: 'Café da Manhã Fresquinho',
+    bastidores: 'Preparo Artesanal nos Bastidores',
+    depoimentos: 'Clientes que Voltam Sempre',
+    datas: 'Datas Especiais no Cardápio',
+    cardapio: 'Destaques do Cardápio',
+    delivery: 'Delivery Quentinho & Rápido',
+    promo: 'Combo Especial da Semana',
+  },
+  fitness: {
+    disciplina: 'Constância e Superação',
+    motivacao: 'Constância e Superação',
+    dicas: 'Dica Prática de Treino',
+    treino: 'Dica Prática de Treino',
+    planos: 'Planos e Matrículas Abertas',
+    resultados: 'Evolução Real dos Alunos',
+    bastidores: 'Equipe e Estrutura da Academia',
+    datas: 'Datas Especiais e Desafios',
+  },
+  saude: {
+    sorriso: 'Estética Dental e Autoestima',
+    prevencao: 'Prevenção e Saúde em Dia',
+    avaliacao: 'Agende sua Avaliação',
+    depoimentos: 'Pacientes Satisfeitos',
+    tecnologia: 'Tecnologia e Estrutura',
+    datas: 'Datas de Conscientização',
+    procedimentos: 'Procedimentos e Tecnologia',
+    duvidas: 'Mitos e Verdades da Saúde',
+  },
+  imoveis: {
+    destaque: 'Imóvel em Destaque da Semana',
+    dicas: 'Dicas para Comprar ou Alugar',
+    financiamento: 'Financiamento Descomplicado',
+    depoimentos: 'Clientes Realizando o Sonho',
+    lancamento: 'Lançamento Imobiliário',
+    bastidores: 'Bastidores da Vida de Corretor',
+  },
+  pet: {
+    cuidado: 'Cuidado em Todas as Fases',
+    cuidados: 'Saúde e Bem-Estar do seu Pet',
+    banho: 'Banho, Tosa e Higiene Pet',
+    dicas: 'Dicas de Cuidado com o Pet',
+    depoimentos: 'Tutores Felizes',
+    datas: 'Datas Especiais Pet',
+    bastidores: 'Bastidores do Pet Shop',
+    filhotes: 'Cuidados com Filhotes',
+  },
+  servicos: {
+    produtividade: 'Estratégia Prática de Gestão',
+    dica: 'Estratégia Prática de Gestão',
+    ferramentas: 'Ferramentas que Facilitam o Dia a Dia',
+    bastidores: 'Bastidores do Nosso Trabalho',
+    depoimentos: 'Cases e Resultados de Clientes',
+    case: 'Resultados Reais de Clientes',
+    diagnostico: 'Diagnóstico Gratuito do seu Negócio',
+    datas: 'Datas Especiais e Ofertas',
+    servico: 'Como Funciona nossa Consultoria',
+  },
+  moda: {
+    colecao: 'Nova Coleção na Vitrine',
+    lancamento: 'Nova Coleção na Vitrine',
+    promo: 'Promoção da Semana',
+    dicas: 'Dicas de Estilo e Looks',
+    looks: '3 Looks para a Semana',
+    tendencias: 'Tendências da Estação',
+    presente: 'Ideias de Presentes',
+    depoimentos: 'Clientes com Estilo',
+    bastidores: 'Bastidores da Produção e Curadoria',
+  },
+}
+
+/** Fallback sem segmento (ou segmento desconhecido): ids compartilhados ganham um rótulo neutro, sem vocabulário de um nicho só. */
 export const THEME_LABELS_MAP: Record<string, string> = {
+  bastidores: 'Nos Bastidores',
+  depoimentos: 'Depoimentos de Clientes',
+  dicas: 'Dicas Práticas',
+  datas: 'Datas Especiais',
+  promo: 'Promoção da Semana',
+  lancamento: 'Lançamento da Semana',
   cabelo: 'Cuidados e Tratamentos Capilares',
   estetica: 'Estética Facial e Skincare',
   transformacoes: 'Transformações Antes e Depois',
   produtos: 'Produtos Profissionais & Home Care',
-  depoimentos: 'Depoimentos e Experiência Real',
   agendamentos: 'Agenda Aberta da Semana',
   equipe: 'Bastidores e Especialistas',
   cardapio: 'Destaques do Cardápio',
   delivery: 'Delivery Quentinho & Rápido',
-  bastidores: 'Preparo Artesanal nos Bastidores',
-  promo: 'Combo Especial da Semana',
   treino: 'Dica Prática de Treino',
   motivacao: 'Constância e Superação',
   resultados: 'Evolução Real dos Alunos',
@@ -65,7 +159,6 @@ export const THEME_LABELS_MAP: Record<string, string> = {
   sorriso: 'Estética Dental e Autoestima',
   duvidas: 'Mitos e Verdades da Saúde',
   destaque: 'Imóvel em Destaque da Semana',
-  dicas: 'Dicas para Comprar ou Alugar',
   financiamento: 'Financiamento Descomplicado',
   cuidados: 'Saúde e Bem-Estar do seu Pet',
   banho: 'Banho, Tosa e Higiene Pet',
@@ -73,9 +166,15 @@ export const THEME_LABELS_MAP: Record<string, string> = {
   dica: 'Estratégia Prática de Gestão',
   case: 'Resultados Reais de Clientes',
   servico: 'Como Funciona nossa Consultoria',
-  lancamento: 'Nova Coleção na Vitrine',
   looks: '3 Looks para a Semana',
   tendencias: 'Tendências da Estação',
+}
+
+/** Rótulo do tema para o segmento (par segmento + tema); cai no mapa neutro e, sem ele, em undefined. */
+export function themeLabelOf(segment: string | undefined, themeId: string | undefined): string | undefined {
+  if (!themeId) return undefined
+  const seg = (segment || '').toLowerCase() === 'padaria' ? 'alimentacao' : (segment || '').toLowerCase()
+  return SEGMENT_THEME_LABELS[seg]?.[themeId] ?? THEME_LABELS_MAP[themeId]
 }
 
 /**
@@ -88,7 +187,7 @@ export async function rewriteWithAI(
   const mode = req.mode || 'vendedor'
   const creative = req.creative || { headline: 'Excelência em cada detalhe', cta: 'Saiba mais', caption: '' }
   const brandName = req.brandName || 'Sua Marca'
-  const segment = req.segment || 'beleza'
+  const segment = req.segment || 'outro'
   const city = req.city || ''
 
   const modeDescriptions: Record<AIRewriteRequest['mode'], string> = {
@@ -199,96 +298,77 @@ export const aiErrorKindOf = (code: AiErrorCode): AiErrorKind => ERROR_KIND[code
 
 export function synthesizeContextualRewrite(req: AIRewriteRequest) {
   const { creative, mode = 'vendedor', brandName = 'nossa equipe', seed = 1 } = req
-  const cleanOriginal = (creative.headline || 'Cuidado especializado').replace(/[.!?]+$/, '').trim()
+  const cleanOriginal = (creative.headline || 'Destaque especial').replace(/[.!?]+$/, '').trim()
   const words = cleanOriginal.split(/\s+/)
   const coreTopic = words.slice(0, Math.min(4, words.length)).join(' ')
   const tags = creative.hashtags?.length ? `\n\n${creative.hashtags.join(' ')}` : ''
   const v = Math.abs(seed) % 3
+  // O vocabulário segue o segmento: uma padaria nunca recebe "agende seu horário" nem "protocolo".
+  const voice = voiceFor(req.segment, brandName, creative.headline, creative.sub, creative.caption)
+  const vars = { brand: brandName, orig: cleanOriginal, topic: coreTopic, city: '' }
+  const f = (template: string, extra: Record<string, string> = {}) => fillVoice(template, { ...vars, ...extra })
 
   switch (mode) {
     case 'vendedor': {
-      const headlines = [
-        `${cleanOriginal}: garanta seu horário esta semana.`,
-        `Resultado de salão que transforma sua rotina imediata.`,
-        `Condição exclusiva para você viver essa experiência.`,
-      ]
-      const head = headlines[v]
-      const hl = v === 0 ? 'seu horário' : v === 1 ? 'transforma sua rotina' : 'Condição exclusiva'
+      const r = voice.rewrite.vendedor
+      const head = f(r.heads[v])
       return {
         headline: head,
-        highlight: hl,
-        sub: `Atendimento individualizado na ${brandName} com vagas limitadas na agenda da semana.`,
-        bullets: creative.bullets?.map((b) => `✓ ${b.replace(/^[✓•-]\s*/, '')}`),
-        cta: 'Reservar meu horário',
-        caption: `🔥 ${head}\n\nSe você estava esperando o momento certo para priorizar o seu cuidado, a hora é agora. Na ${brandName}, unimos diagnóstico preciso e produtos de linha profissional para entregar o resultado que você procura.\n\n⚡ Restam poucos horários disponíveis para esta semana.\n👉 Toque no link da bio ou envie uma mensagem no Direct agora mesmo!${tags}`,
+        highlight: f(r.hls[v]),
+        sub: f(r.sub),
+        bullets: creative.bullets?.map((b) => (voice.key === 'beleza' ? `✓ ${b.replace(/^[✓•-]\s*/, '')}` : b)),
+        cta: r.cta,
+        caption: `${f(r.caption, { head })}${tags}`,
       }
     }
     case 'curto': {
+      const r = voice.rewrite.curto
       const shortHead = words.length > 5 ? `${words.slice(0, 5).join(' ')}.` : `${cleanOriginal}.`
       const hl = shortHead.split(' ').slice(-2).join(' ').replace('.', '')
       return {
         headline: shortHead,
         highlight: hl,
-        sub: `Técnica apurada e resultado imediato na ${brandName}.`,
+        sub: f(r.sub),
         bullets: creative.bullets?.map((b) => b.split(' ').slice(0, 5).join(' ')),
-        cta: 'Agendar agora',
-        caption: `✨ ${shortHead}\n\nDireto ao ponto, com resultado visível desde a primeira sessão.\n\n📍 ${brandName}\n💬 Chame no Direct ou acesse o link da bio.${tags}`,
+        cta: r.cta,
+        caption: `${f(r.caption, { head: shortHead })}${tags}`,
       }
     }
     case 'sofisticado': {
-      const headlines = [
-        `A alta performance que o seu cuidado pessoal exige.`,
-        `${coreTopic}: um protocolo desenhado sob medida.`,
-        `Exclusividade, precisão técnica e acabamento impecável.`,
-      ]
-      const head = headlines[v]
-      const hl = v === 0 ? 'alta performance' : v === 1 ? 'desenhado sob medida' : 'acabamento impecável'
+      const r = voice.rewrite.sofisticado
+      const head = f(r.heads[v])
       return {
         headline: head,
-        highlight: hl,
-        sub: `Protocolos personalizados e curadoria de alto padrão na ${brandName}.`,
+        highlight: f(r.hls[v]),
+        sub: f(r.sub),
         bullets: creative.bullets,
-        cta: 'Viver a experiência',
-        caption: `✨ ${head}\n\nNa ${brandName}, acreditamos que o verdadeiro luxo está na escuta atenta, nos ativos de alta performance e no tempo dedicado exclusivamente a você.\n\n🥂 Agendamentos pelo link da bio.${tags}`,
+        cta: r.cta,
+        caption: `${f(r.caption, { head })}${tags}`,
       }
     }
     case 'descontraido': {
-      const headlines = [
-        `Bora dar aquele upgrade no visual que muda o humor? 😍`,
-        `Spoiler: você não vai querer sair da frente do espelho! ✨`,
-        `Aquele momento só seu que salva qualquer semana corrida!`,
-      ]
-      const head = headlines[v]
-      const hl = v === 0 ? 'muda o humor?' : v === 1 ? 'frente do espelho!' : 'semana corrida!'
+      const r = voice.rewrite.descontraido
+      const head = f(r.heads[v])
       return {
         headline: head,
-        highlight: hl,
-        sub: `Vem tomar um café com a gente na ${brandName} e sair renovada!`,
+        highlight: f(r.hls[v]),
+        sub: f(r.sub),
         bullets: creative.bullets,
-        cta: 'Bora agendar!',
-        caption: `😍 ${head}\n\nSabe aquela sensação maravilhosa de sair pronta e com a autoestima lá no alto? É exatamente isso que espera por você aqui na ${brandName}!\n\nChama a gente no Direct que separamos um horário especial pra você! 💬👇${tags}`,
+        cta: r.cta,
+        caption: `${f(r.caption, { head })}${tags}`,
       }
     }
     case 'educativo':
     default: {
-      const headlines = [
-        `O detalhe técnico que faz o resultado durar o dobro:`,
-        `Como manter o efeito profissional no seu dia a dia:`,
-        `Guia prático dos especialistas da ${brandName}:`,
-      ]
-      const head = headlines[v]
-      const hl = v === 0 ? 'durar o dobro:' : v === 1 ? 'efeito profissional' : `da ${brandName}:`
+      const r = voice.rewrite.educativo
+      const head = f(r.heads[v])
       return {
         headline: head,
-        highlight: hl,
-        sub: `Orientação prática da equipe ${brandName} para você aplicar na rotina.`,
-        bullets: creative.bullets || [
-          'Diagnóstico personalizado antes de cada protocolo',
-          'Uso de ativos adequados à sua necessidade real',
-          'Manutenção preventiva no intervalo correto',
-        ],
-        cta: 'Salve para consultar',
-        caption: `📌 ${head}\n\nPequenos ajustes orientados por quem domina a técnica mudam completamente a durabilidade do seu resultado:\n\n1️⃣ Respeite as necessidades específicas do seu perfil.\n2️⃣ Evite fórmulas genéricas sem avaliação prévia.\n3️⃣ Conte com o acompanhamento próximo da ${brandName}.\n\n💛 Salve este post para consultar sempre que precisar!${tags}`,
+        highlight: f(r.hls[v]),
+        sub: f(r.sub),
+        bullets: creative.bullets || r.bullets.map((x) => f(x)),
+        cta: r.cta,
+        caption: `${f(r.caption, { head })}${tags}`,
       }
     }
   }
@@ -317,16 +397,20 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
   const seed = (params.seed || 101) + version * 19
   const pick = <T>(arr: T[], offset = 0): T => arr[Math.abs(seed + offset) % arr.length]
 
-  const brandTag = `#${brand.replace(/[^A-Za-zÀ-ÿ0-9]/g, '')}`
-  const cityHashtag = city ? `#${city.replace(/[^A-Za-zÀ-ÿ0-9]/g, '')}` : '#AtendimentoExclusivo'
-  const userHighlights = extractBriefingHighlights(params.about, params.topics)
-
   const themeKey = (params.themeId || '').toLowerCase()
   const searchContext = `${themeKey} ${params.customTheme || ''} ${params.topics || ''} ${params.about || ''}`.toLowerCase()
+  // Vocabulário do segmento (CTAs, legendas, enquetes, hashtags). Alimentação vira "padaria" quando o briefing fala de pão/bolo.
+  const voice = voiceFor(params.segment, brand, params.about, params.topics, params.customTheme, themeKey)
+  const isBeauty = voice.key === 'beleza'
 
-  // Determina o subnicho exato para copywriting altamente específico
-  let packKey = themeKey
-  if (!packKey || packKey === 'custom') {
+  const brandTag = `#${brand.replace(/[^A-Za-zÀ-ÿ0-9]/g, '')}`
+  const cityHashtag = city ? `#${city.replace(/[^A-Za-zÀ-ÿ0-9]/g, '')}` : voice.localTag
+  const userHighlights = extractBriefingHighlights(params.about, params.topics)
+
+  // Determina o subnicho exato para copywriting altamente específico.
+  // Os packs de cabelo e estética são de salão: só entram para o segmento beleza (os outros usam o pack adaptativo abaixo).
+  let packKey = isBeauty ? themeKey : 'adaptativo'
+  if (isBeauty && (!packKey || packKey === 'custom')) {
     if (/cabelo|capilar|hidrata|mecha|loiro|escova|cronograma|fio/i.test(searchContext)) packKey = 'cabelo'
     else if (/pele|facial|limpeza|skincare|botox|peeling|estetic/i.test(searchContext)) packKey = 'estetica'
     else if (/unha|manicure|pedicure|esmalt|gel/i.test(searchContext)) packKey = 'unhas'
@@ -334,13 +418,6 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
     else if (/produto|home care|kit|mascara/i.test(searchContext)) packKey = 'produtos'
     else if (/depoimento|avaliac|cliente/i.test(searchContext)) packKey = 'depoimentos'
     else if (/agenda|horario|vaga|promo/i.test(searchContext)) packKey = 'agendamentos'
-    else if (params.segment === 'alimentacao') packKey = 'cardapio'
-    else if (params.segment === 'fitness') packKey = 'treino'
-    else if (params.segment === 'saude') packKey = 'prevencao'
-    else if (params.segment === 'imoveis') packKey = 'destaque'
-    else if (params.segment === 'pet') packKey = 'cuidados'
-    else if (params.segment === 'servicos') packKey = 'dica'
-    else if (params.segment === 'moda') packKey = 'lancamento'
     else packKey = 'cabelo'
   }
 
@@ -500,6 +577,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       cityPhrase,
       brandTag,
       cityHashtag,
+      voice,
       p1,
       p2,
       p3,
@@ -624,6 +702,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       cityPhrase,
       brandTag,
       cityHashtag,
+      voice,
       p1,
       p2,
       p3,
@@ -673,7 +752,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
   // Pack adaptativo rico para os demais segmentos e temas (Alimentação, Fitness, Saúde, Imóveis, Pet, Serviços, Moda, Transformações, Produtos, Agenda, etc.)
   const cleanTheme =
     customLabel ||
-    (params.themeId && THEME_LABELS_MAP[params.themeId]) ||
+    themeLabelOf(params.segment, params.themeId) ||
     (userHighlights[0] ? userHighlights[0].charAt(0).toUpperCase() + userHighlights[0].slice(1) : 'Excelência e Atendimento Exclusivo')
 
   const segConfig: Record<
@@ -745,9 +824,9 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       sub1: `Peça pelo delivery ou venha viver essa experiência gastronômica${cityPhrase}.`,
       bullets2: [
         [
-          'Insumos frescos selecionados diariamente pela nossa cozinha',
-          'Embalagem térmica que mantém a temperatura e a crocância',
-          'Entrega ágil e pedido descomplicado pelo WhatsApp',
+          'Insumos frescos selecionados todo dia',
+          'Embalagem que mantém calor e crocância',
+          'Entrega ágil e pedido fácil pelo WhatsApp',
         ],
       ],
       icons3: [
@@ -777,9 +856,9 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       sub1: `Estrutura moderna e professores atentos à sua evolução${cityPhrase}.`,
       bullets2: [
         [
-          'Periodização de treino ajustada ao seu condicionamento atual',
-          'Correção postural e acompanhamento próximo em sala',
-          'Horários amplos que se encaixam na sua rotina diária',
+          'Treino ajustado ao seu condicionamento atual',
+          'Correção postural e acompanhamento em sala',
+          'Horários amplos que cabem na sua rotina',
         ],
       ],
       icons3: [
@@ -809,9 +888,9 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       sub1: `Equipe especializada e estrutura acolhedora pronta para cuidar de você${cityPhrase}.`,
       bullets2: [
         [
-          'Avaliação clínica detalhada e sem pressa no consultório',
-          'Equipamentos modernos para procedimentos precisos e confortáveis',
-          'Acompanhamento preventivo em todas as etapas do tratamento',
+          'Avaliação clínica detalhada e sem pressa',
+          'Equipamentos modernos e atendimento confortável',
+          'Acompanhamento preventivo em cada etapa',
         ],
       ],
       icons3: [
@@ -819,7 +898,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
         { icon: 'heart', label: 'Escuta humana' },
         { icon: 'sparkles', label: 'Alta tecnologia' },
       ],
-      offerTitle: `Agende seu check-up preventivo nesta semana na ${brand}!`,
+      offerTitle: `Check-up preventivo nesta semana na ${brand}!`,
       offerBullets: ['Avaliação detalhada com especialista', 'Horários planejados sem fila de espera'],
       priceLabel: 'Consulta / Avaliação',
       priceVal: pick(['140', '180', '220'], 1),
@@ -841,9 +920,9 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       sub1: `Assessoria imobiliária completa em todas as etapas${cityPhrase}.`,
       bullets2: [
         [
-          'Plantas inteligentes com iluminação natural e acabamento superior',
-          'Localização privilegiada próxima a serviços e vias rápidas',
-          'Suporte jurídico e simulação de financiamento sem burocracia',
+          'Plantas inteligentes e acabamento superior',
+          'Localização próxima a serviços e vias rápidas',
+          'Apoio jurídico e simulação de financiamento',
         ],
       ],
       icons3: [
@@ -851,7 +930,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
         { icon: 'trending', label: 'Alta valorização' },
         { icon: 'shield', label: 'Segurança jurídica' },
       ],
-      offerTitle: `Agende uma visita exclusiva com os especialistas da ${brand}!`,
+      offerTitle: `Visita exclusiva com a equipe da ${brand}!`,
       offerBullets: ['Simulação personalizada das melhores taxas', 'Atendimento consultivo individual'],
       priceLabel: 'Parcelas a partir de',
       priceVal: pick(['1.890', '2.190', '2.490'], 1),
@@ -867,15 +946,15 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
       h1: [
         `${cleanTheme}: cuidado afetuoso e estrutura segura para o seu melhor amigo.`,
         `Banho, tosa e acompanhamento veterinário sem estresse na ${brand}.`,
-        `Onde o seu pet é tratado com o amor e a segurança da família.`,
+        `Onde o seu pet é tratado com o carinho da família.`,
       ],
-      hl1: ['seu melhor amigo.', 'sem estresse', 'segurança da família.'],
+      hl1: ['seu melhor amigo.', 'sem estresse', 'carinho da família.'],
       sub1: `Profissionais apaixonados por animais e produtos hipoalergênicos${cityPhrase}.`,
       bullets2: [
         [
-          'Ambiente higienizado, seguro e monitorado em tempo integral',
-          'Produtos dermatologicamente testados para peles sensíveis',
-          'Manejo gentil e positivo para cães e gatos de todos os portes',
+          'Ambiente higienizado, seguro e monitorado',
+          'Produtos testados para peles sensíveis',
+          'Manejo gentil para cães e gatos de todo porte',
         ],
       ],
       icons3: [
@@ -897,17 +976,17 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
     servicos: {
       tag1: 'GESTÃO & PERFORMANCE',
       h1: [
-        `${cleanTheme}: estratégia clara para destravar o crescimento do seu negócio.`,
-        `Menos improviso operacional, mais previsibilidade e lucro na sua empresa.`,
-        `Soluções sob medida da ${brand} para decisões mais seguras.`,
+        `${cleanTheme}: estratégia clara para crescer com segurança.`,
+        `Menos improviso, mais previsibilidade e lucro na empresa.`,
+        `Soluções da ${brand} para decisões mais seguras.`,
       ],
-      hl1: ['seu negócio.', 'previsibilidade e lucro', 'decisões mais seguras.'],
+      hl1: ['crescer com segurança.', 'previsibilidade e lucro', 'decisões mais seguras.'],
       sub1: `Consultoria e atendimento especializado para empresas e profissionais${cityPhrase}.`,
       bullets2: [
         [
-          'Diagnóstico preciso dos gargalos que travam sua margem hoje',
-          'Plano de ação prático com metas e indicadores claros',
-          'Acompanhamento próximo da nossa equipe especialista',
+          'Diagnóstico claro dos gargalos da sua margem',
+          'Plano de ação com metas e indicadores claros',
+          'Acompanhamento próximo da nossa equipe',
         ],
       ],
       icons3: [
@@ -915,7 +994,7 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
         { icon: 'clock', label: 'Agilidade real' },
         { icon: 'shield', label: 'Segurança técnica' },
       ],
-      offerTitle: `Agende uma Sessão de Diagnóstico Estratégico na ${brand}!`,
+      offerTitle: `Sessão de diagnóstico estratégico na ${brand}!`,
       offerBullets: ['Análise personalizada do seu cenário atual', 'Mapeamento das principais oportunidades de ganho'],
       priceLabel: 'Consultoria a partir de',
       priceVal: pick(['190', '250', '320'], 1),
@@ -929,16 +1008,16 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
     moda: {
       tag1: 'NOVA COLEÇÃO',
       h1: [
-        `${cleanTheme}: caimento impecável e versatilidade para todos os momentos.`,
-        `Peças atemporais que traduzem elegância sem esforço na ${brand}.`,
-        `Renove seu closet com a curadoria exclusiva da nossa vitrine.`,
+        `${cleanTheme}: caimento impecável e versatilidade.`,
+        `Peças atemporais com elegância sem esforço na ${brand}.`,
+        `Renove seu closet com a curadoria da nossa vitrine.`,
       ],
-      hl1: ['caimento impecável', 'elegância sem esforço', 'curadoria exclusiva'],
+      hl1: ['caimento impecável', 'elegância sem esforço', 'curadoria da nossa vitrine.'],
       sub1: `Tecidos selecionados, modelagem valorizadora e atendimento consultivo${cityPhrase}.`,
       bullets2: [
         [
-          'Modelagens pensadas para valorizar o corpo com conforto absoluto',
-          'Peças fáceis de coordenar do trabalho ao final de semana',
+          'Modelagens que valorizam o corpo com conforto',
+          'Peças fáceis de combinar em qualquer ocasião',
           'Consultoria de estilo na loja ou pelo WhatsApp',
         ],
       ],
@@ -958,20 +1037,108 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
         `confident stylish woman smiling in modern fashion store`,
       ],
     },
+    // Subnicho de alimentação (voz "padaria"): o prompt de imagem começa por "bread/bakery" para o banco de fotos achar pão, não sushi.
+    padaria: {
+      tag1: 'FORNADA DO DIA',
+      h1: [
+        `${cleanTheme}: fornada fresquinha todo dia.`,
+        `O cheirinho de pão quentinho que começa o seu dia.`,
+        `Receitas caseiras assadas com carinho na ${brand}.`,
+      ],
+      hl1: ['fornada fresquinha todo dia.', 'pão quentinho', `na ${brand}.`],
+      sub1: `Pães, bolos e salgados fresquinhos, direto do forno${cityPhrase}.`,
+      bullets2: [
+        [
+          'Fornadas ao longo do dia, sempre fresquinhas',
+          'Receitas caseiras com ingredientes selecionados',
+          'Encomendas de bolos, tortas e cestas sob medida',
+        ],
+        [
+          'Pão artesanal de fermentação lenta',
+          'Café da manhã e lanche da tarde completos',
+          'Atendimento acolhedor, do balcão à mesa',
+        ],
+      ],
+      icons3: [
+        { icon: 'flame', label: 'Fornada fresquinha' },
+        { icon: 'heart', label: 'Receita caseira' },
+        { icon: 'gift', label: 'Encomendas sob medida' },
+      ],
+      offerTitle: `Cesta de café da manhã na ${brand}!`,
+      offerBullets: ['Pães, frios e bolo caseiro na mesma cesta', 'Retirada no balcão ou entrega combinada'],
+      priceLabel: 'Cestas a partir de',
+      priceVal: pick(['59', '79', '99'], 1),
+      imgPrompts: [
+        `fresh baked artisan bread loaves on a rustic wooden counter in a bakery, warm morning light`,
+        `baker taking fresh bread from the oven in a bakery, flour dust, warm light`,
+        `cozy bakery display case with pastries, cakes and croissants`,
+        `breakfast table with fresh bread, croissants and coffee`,
+      ],
+    },
+    // Segmento "outro" ou desconhecido: nada de salão, clínica ou procedimento.
+    generico: {
+      tag1: 'QUALIDADE & CONFIANÇA',
+      h1: [
+        `${cleanTheme}: qualidade e atendimento que você percebe.`,
+        `Cuidado em cada detalhe para você escolher com confiança.`,
+        `Conheça o trabalho da ${brand}, feito com atenção do início ao fim.`,
+      ],
+      hl1: ['atendimento que você percebe.', 'escolher com confiança.', `da ${brand}`],
+      sub1: userHighlights.length >= 2
+        ? `${userHighlights.slice(0, 3).join(', ')}${cityPhrase}.`
+        : `Atendimento próximo, qualidade e clareza em cada etapa${cityPhrase}.`,
+      bullets2: [
+        [
+          'Atendimento próximo e transparente',
+          'Qualidade que você percebe nos detalhes',
+          'Prazos combinados e respeitados',
+        ],
+        [
+          'Comunicação clara pelo WhatsApp e pelo Direct',
+          'Cuidado com cada etapa do trabalho',
+          'Equipe atenta ao que você realmente precisa',
+        ],
+      ],
+      icons3: [
+        { icon: 'star', label: 'Qualidade' },
+        { icon: 'heart', label: 'Atendimento próximo' },
+        { icon: 'check', label: 'Prazo combinado' },
+      ],
+      offerTitle: `Condição especial desta semana na ${brand}!`,
+      offerBullets: ['Atendimento direto com a nossa equipe', 'Condição válida por tempo limitado'],
+      priceLabel: 'A partir de',
+      priceVal: pick(['59', '89', '129'], 1),
+      imgPrompts: [
+        `small business owner welcoming a customer in a bright modern local shop, warm light`,
+        `friendly team working together in a modern small business workspace`,
+        `clean modern storefront of a local business with warm inviting lighting`,
+        `happy customer talking to a smiling shop owner in a local business`,
+      ],
+    },
   }
 
-  const cfg = segConfig[params.segment] || segConfig.beleza
-  const hIdx = Math.abs(seed) % cfg.h1.length
+  const cfg =
+    voice.key === 'padaria'
+      ? segConfig.padaria
+      : (Object.hasOwn(segConfig, params.segment) && params.segment !== 'padaria' && params.segment !== 'generico' && segConfig[params.segment]) || segConfig.generico
+  let hIdx = Math.abs(seed) % cfg.h1.length
+  // A long user theme can push the first headline past the 60-character limit; use one that fits.
+  if (cfg.h1[hIdx].length > 60) {
+    const fits = cfg.h1.findIndex((h) => h.length <= 60)
+    if (fits >= 0) hIdx = fits
+  }
   const bIdx = Math.abs(seed + 1) % cfg.bullets2.length
+  const themeLower = cleanTheme.toLowerCase()
+  const fv = (template: string) => fillVoice(template, { brand, city: cityPhrase, theme: themeLower })
 
   const p1 = {
     tag: cfg.tag1,
     headline: cfg.h1[hIdx],
     highlight: cfg.hl1[hIdx],
     sub: cfg.sub1,
-    cta: 'Agende seu horário',
+    cta: voice.ctas.attract,
     imagePrompt: cfg.imgPrompts[0],
-    captionIntro: `Quando você escolhe quem domina a técnica e respeita a sua individualidade, o resultado aparece em cada detalhe. Na ${brand}, nosso foco é unir excelência técnica e praticidade para o seu dia a dia.`,
+    captionIntro: fv(voice.p1.intro),
   }
 
   const p2 = {
@@ -979,35 +1146,37 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
     headline: `3 diferenciais que fazem a ${brand} ser referência:`,
     highlight: 'ser referência:',
     bullets: cfg.bullets2[bIdx],
-    sub: `Cuidado planejado para superar suas expectativas${cityPhrase}.`,
-    cta: 'Salve para lembrar',
+    sub: fv(voice.p2.sub),
+    cta: voice.ctas.save,
     imagePrompt: cfg.imgPrompts[1],
-    captionIntro: `Mais do que entregar um serviço, construímos uma experiência de confiança do início ao fim. Veja o que você encontra em cada atendimento na ${brand}:`,
+    captionIntro: fv(voice.p2.intro),
   }
 
   const p3 = {
-    tag: 'PADRÃO DE EXCELÊNCIA',
-    headline: `Qualidade superior que você percebe desde o primeiro contato.`,
-    highlight: 'primeiro contato.',
+    tag: voice.p3.tag,
+    headline: fv(voice.p3.headline),
+    highlight: fv(voice.p3.highlight),
     icons: cfg.icons3,
-    sub: `Atendimento personalizado na ${brand}${cityPhrase}.`,
-    cta: 'Falar com especialista',
+    sub: fv(voice.p3.sub),
+    cta: voice.ctas.special,
     imagePrompt: cfg.imgPrompts[2],
-    captionIntro: `Cada protocolo da ${brand} foi desenhado para quem não abre mão de qualidade, pontualidade e resultado duradouro.`,
+    captionIntro: fv(voice.p3.intro),
   }
 
   const p4 = {
     variant: 'offer' as const,
-    tag: 'AGENDA DA SEMANA',
+    tag: voice.p4.tag,
     headline: cfg.offerTitle,
-    highlight: 'Semana',
+    highlight: cfg.offerTitle.includes(brand) ? brand : cfg.offerTitle.replace(/[!.?]+$/, '').split(' ').slice(0, 2).join(' '),
     bullets: cfg.offerBullets,
-    sub: `Garanta sua vaga com condição especial nesta semana${cityPhrase}.`,
+    sub: fv(voice.p4.sub),
     price: { label: cfg.priceLabel, value: cfg.priceVal, cents: '90' },
-    cta: 'Garantir minha vaga',
+    cta: voice.ctas.offer,
     imagePrompt: cfg.imgPrompts[3],
-    captionIntro: `Liberamos horários especiais na agenda desta semana para você viver a experiência completa da ${brand}!`,
+    captionIntro: fv(voice.p4.intro),
   }
+
+  const opener = voice.s1[Math.abs(seed) % voice.s1.length]
 
   return buildFormattedPack({
     themeLabel: cleanTheme,
@@ -1016,43 +1185,44 @@ export function synthesizeAIContent(params: AIGenerateRequest['params'], version
     cityPhrase,
     brandTag,
     cityHashtag,
+    voice,
     p1,
     p2,
     p3,
     p4,
     stories: [
       {
-        headline: `Como está o seu cuidado com ${cleanTheme.toLowerCase()} hoje?`,
-        highlight: `${cleanTheme.toLowerCase()} hoje?`,
-        poll: ['Tudo em dia! ✨', 'Precisando agendar!'],
-        cta: 'Vote na enquete',
+        headline: fv(opener.h),
+        highlight: fv(opener.hl),
+        poll: [opener.poll[0], opener.poll[1]],
+        cta: voice.ctas.s1,
         imagePrompt: `vertical ${cfg.imgPrompts[0]}`,
-        caption: `Story 1 (Enquete): Pergunta rápida sobre ${cleanTheme.toLowerCase()} para abrir conversa com os seguidores.`,
+        caption: `Story 1 (Enquete): Pergunta rápida para abrir conversa com os seguidores sobre ${themeLower}.`,
       },
       {
-        headline: `3 motivos para priorizar esse cuidado ainda esta semana:`,
-        highlight: 'ainda esta semana:',
+        headline: fv(voice.s2.h),
+        highlight: fv(voice.s2.hl),
         bullets: cfg.bullets2[0],
-        sub: `A equipe da ${brand} cuida de cada etapa para você.`,
-        cta: 'Veja como funciona',
+        sub: fv(voice.s2.sub),
+        cta: voice.ctas.s2,
         imagePrompt: `vertical ${cfg.imgPrompts[1]}`,
-        caption: 'Story 2 (Valor): Destaca os benefícios práticos de contar com apoio especializado.',
+        caption: 'Story 2 (Valor): Destaca os benefícios práticos de contar com a marca.',
       },
       {
-        headline: `Atendimento exclusivo e hora marcada na ${brand}.`,
-        highlight: `na ${brand}.`,
+        headline: fv(voice.s3.h),
+        highlight: fv(voice.s3.hl),
         sub: cfg.sub1,
-        cta: 'Conhecer resultados',
+        cta: voice.ctas.s3,
         imagePrompt: `vertical ${cfg.imgPrompts[2]}`,
         caption: 'Story 3 (Autoridade): Reforça os diferenciais da marca.',
       },
       {
-        headline: `Últimos horários disponíveis para esta semana!`,
-        highlight: 'esta semana!',
-        sub: `Envie "QUERO" no Direct ou acesse o link da bio para agendar pelo WhatsApp${cityPhrase}.`,
-        cta: 'Chamar no Direct agora',
+        headline: fv(voice.s4.h),
+        highlight: fv(voice.s4.hl),
+        sub: fv(voice.s4.sub),
+        cta: voice.ctas.s4,
         imagePrompt: `vertical ${cfg.imgPrompts[3]}`,
-        caption: 'Story 4 (Conversão): Chamada direta para agendamento.',
+        caption: voice.s4.caption,
       },
     ],
   })
@@ -1065,13 +1235,17 @@ function buildFormattedPack(opts: {
   cityPhrase: string
   brandTag: string
   cityHashtag: string
+  voice: SegmentVoice
   p1: any
   p2: any
   p3: any
   p4: any
   stories: any[]
 }) {
-  const { themeLabel, brand, city, cityPhrase, brandTag, cityHashtag, p1, p2, p3, p4, stories } = opts
+  const { themeLabel, brand, city, cityPhrase, brandTag, cityHashtag, voice, p1, p2, p3, p4, stories } = opts
+  const vars = { brand, city: cityPhrase }
+  const tagsFor = (list: string[]) => list.map((t) => (t === '{brand}' ? brandTag : t === '{city}' ? cityHashtag : t))
+  const [ct1, ct2, ct3] = voice.captionTags
   return {
     themeLabel,
     posts: [
@@ -1083,8 +1257,8 @@ function buildFormattedPack(opts: {
         sub: p1.sub,
         cta: p1.cta,
         imagePrompt: p1.imagePrompt,
-        caption: `✨ ${p1.headline}\n\n${p1.captionIntro}\n\n📍 Atendimento exclusivo${cityPhrase}.\n💬 Toque no link da bio ou envie uma mensagem no Direct para agendar o seu horário!\n\n${brandTag} ${cityHashtag} #Excelencia #Autocuidado #ResultadosReais`,
-        hashtags: [brandTag, cityHashtag, '#AtendimentoPersonalizado', '#AltaPerformance', '#CuidadoEspecializado'],
+        caption: `✨ ${p1.headline}\n\n${p1.captionIntro}\n\n${fillVoice(voice.p1.line, vars)}\n💬 ${fillVoice(voice.p1.contact, vars)}\n\n${brandTag} ${cityHashtag} ${ct1}`,
+        hashtags: tagsFor(voice.postTags[0]),
       },
       {
         variant: 'list',
@@ -1095,8 +1269,8 @@ function buildFormattedPack(opts: {
         sub: p2.sub,
         cta: p2.cta,
         imagePrompt: p2.imagePrompt,
-        caption: `📌 ${p2.headline}\n\n${p2.captionIntro}\n\n• ${p2.bullets[0]}\n• ${p2.bullets[1]}\n• ${p2.bullets[2]}\n\n💾 Salve este post para consultar sempre que precisar e compartilhe com quem também merece saber disso!\n\n${brandTag} ${cityHashtag} #DicaDeEspecialista #CuidadoDiario`,
-        hashtags: [brandTag, '#DicasPraticas', '#Especialistas', cityHashtag, '#BemEstar'],
+        caption: `📌 ${p2.headline}\n\n${p2.captionIntro}\n\n• ${p2.bullets[0]}\n• ${p2.bullets[1]}\n• ${p2.bullets[2]}\n\n💾 Salve este post para consultar sempre que precisar e compartilhe com quem também merece saber disso!\n\n${brandTag} ${cityHashtag} ${ct2}`,
+        hashtags: tagsFor(voice.postTags[1]),
       },
       {
         variant: 'icons',
@@ -1107,8 +1281,8 @@ function buildFormattedPack(opts: {
         sub: p3.sub,
         cta: p3.cta,
         imagePrompt: p3.imagePrompt,
-        caption: `💎 ${p3.headline}\n\n${p3.captionIntro}\n\n✨ ${p3.icons[0].label}\n💛 ${p3.icons[1].label}\n🛡️ ${p3.icons[2].label}\n\nVenha viver essa experiência na ${brand}${cityPhrase}!\n\n${brandTag} ${cityHashtag} #PadraoPremium #Confianca`,
-        hashtags: [brandTag, '#Diferenciais', '#AltoPadrao', cityHashtag, '#ExperienciaUnica'],
+        caption: `💎 ${p3.headline}\n\n${p3.captionIntro}\n\n✨ ${p3.icons[0].label}\n💛 ${p3.icons[1].label}\n🛡️ ${p3.icons[2].label}\n\n${voice.p3.visit} na ${brand}${cityPhrase}!\n\n${brandTag} ${cityHashtag} ${ct3}`,
+        hashtags: tagsFor(voice.postTags[2]),
       },
       {
         variant: p4.variant || 'offer',
@@ -1123,9 +1297,9 @@ function buildFormattedPack(opts: {
         imagePrompt: p4.imagePrompt,
         caption:
           p4.variant === 'quote'
-            ? `⭐ ${p4.headline}\n\n"${p4.quote?.text}" — ${p4.quote?.author}\n\n${p4.captionIntro}\n\n💬 Quer viver essa transformação também? Chame nossa equipe no Direct!${city ? `\n📍 ${brand} · ${city}` : ''}`
-            : `⏰ ${p4.headline}\n\n${p4.captionIntro}\n\n✅ ${p4.bullets?.[0]}\n✅ ${p4.bullets?.[1]}\n\n👉 As vagas da semana são limitadas. Envie um "QUERO" no Direct ou toque no link da bio agora mesmo!${city ? `\n📍 ${brand} · ${city}` : ''}`,
-        hashtags: [brandTag, '#AgendaAberta', '#CondicaoEspecial', cityHashtag, '#Resultados'],
+            ? `⭐ ${p4.headline}\n\n"${p4.quote?.text}" — ${p4.quote?.author}\n\n${p4.captionIntro}\n\n${fillVoice(voice.p4.quoteLine, vars)}${city ? `\n📍 ${brand} · ${city}` : ''}`
+            : `⏰ ${p4.headline}\n\n${p4.captionIntro}\n\n✅ ${p4.bullets?.[0]}\n✅ ${p4.bullets?.[1]}\n\n${fillVoice(voice.p4.line, vars)}${city ? `\n📍 ${brand} · ${city}` : ''}`,
+        hashtags: tagsFor(voice.postTags[3]),
       },
     ],
     stories,

@@ -23,12 +23,12 @@ const KEYWORD_PHOTOS: [RegExp, string[], string[]?][] = [
   [/equipe|bastidor|espaco|salao|clinica/i, ['team', 'booking', 'interior', 'smile-tall']],
   [/agenda|horario|vaga|semana/i, ['booking', 'hair-portrait', 'smile-thumb', 'team']],
   [/presente|voucher|dia da|natal|mae|mulher|especial/i, ['gift', 'products', 'smile-tall', 'story-smile']],
-  [/\bcafe\b|manha|padaria|bolo|confeitaria/i, ['coffee', 'food-dessert', 'food-table', 'food-kitchen'], ['alimentacao', 'servicos', 'outro']],
+  [/\bcafe\b|manha|padaria|bolo|confeitaria|\bpao\b|\bpaes\b|croissant|torta|fornada|doceria/i, ['coffee', 'food-dessert', 'food-table', 'food-kitchen'], ['alimentacao', 'servicos', 'outro']],
   [/comida|prato|almoco|jantar|restaurante|hamburguer|pizza|sabor|delivery/i, ['food', 'food-burger', 'food-kitchen', 'food-table', 'food-delivery'], ['alimentacao']],
   [/treino|academia|muscula|fitness|funcional|aluno/i, ['gym-training', 'gym-coach', 'gym-functional', 'gym-results', 'gym'], ['fitness', 'saude']],
   [/dente|sorriso|odonto|clareamento|consulta/i, ['dental-smile', 'dental', 'dental-consult', 'dental-care', 'dental-tech'], ['saude']],
   [/imovel|casa|apartamento|aluguel|financiamento|arquitetura/i, ['interior', 'home-keys', 'home-kitchen', 'home-facade', 'home-building', 'home-agent'], ['imoveis', 'servicos', 'outro']],
-  [/\bpet\b|cachorro|\bcão\b|\bgato\b|veterinar|banho e tosa/i, ['dog', 'pet-grooming', 'pet-vet', 'pet-play', 'pet-cat'], ['pet']],
+  [/\bpet\b|cachorro|\bcao\b|\bgato\b|veterinar|banho e tosa/i, ['dog', 'pet-grooming', 'pet-vet', 'pet-play', 'pet-cat'], ['pet']],
   [/gestao|consultoria|empresa|negocio|financa|marketing|produtividade|escritorio/i, ['laptop', 'office-team', 'office-meeting', 'office-tools', 'office-client'], ['servicos', 'imoveis', 'outro']],
   [/moda|roupa|look|vestido|blusa|colecao|estilo|loja/i, ['fashion-rack', 'fashion-look', 'fashion-store', 'fashion-client', 'fashion-detail'], ['moda', 'beleza']],
 ]
@@ -45,14 +45,43 @@ const SEGMENT_POOLS: Record<string, string[]> = {
   outro: ['laptop', 'office-team', 'office-client', 'office-meeting', 'office-tools', 'coffee'],
 }
 
-/** `n` different photos for one theme: topic matches first, then the segment pool (repeats only if both run out). */
+const fold = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+/** Which segment a photo id belongs to by name (anything else is the salon library). Same rule as server/imageService.ts. */
+function photoFamily(id: string): string {
+  if (/^(food|coffee)/.test(id)) return 'alimentacao'
+  if (/^gym/.test(id)) return 'fitness'
+  if (/^dental/.test(id)) return 'saude'
+  if (/^(home-|interior)/.test(id)) return 'imoveis'
+  if (/^(dog|pet-)/.test(id)) return 'pet'
+  if (/^(laptop|office)/.test(id)) return 'servicos'
+  if (/^fashion/.test(id)) return 'moda'
+  return 'beleza'
+}
+
+const BEAUTY_ADJACENT = ['beleza', 'saude', 'moda']
+
+/**
+ * `n` different photos for one theme: topic matches first, then the segment pool (repeats only if both run out).
+ * Never another segment's photos: entries with no segment list (produto, cliente, agenda...) only add photos the segment already owns.
+ */
 export function pickDistinctPhotos(text: string, segment = 'beleza', n = 4, seed = 1): string[] {
+  const own = SEGMENT_POOLS[segment] || SEGMENT_POOLS.outro
+  const folded = fold(text)
   const matches: string[] = []
   for (const [re, list, segments] of KEYWORD_PHOTOS) {
     if (segments && !segments.includes(segment)) continue
-    if (re.test(text)) matches.push(...list)
+    if (!re.test(folded)) continue
+    matches.push(
+      ...list.filter((id) => {
+        if (own.includes(id)) return true
+        if (!segments) return false
+        const family = photoFamily(id)
+        return family === segment || (family === 'beleza' && BEAUTY_ADJACENT.includes(segment))
+      }),
+    )
   }
-  const pool = Array.from(new Set([...matches, ...(SEGMENT_POOLS[segment] || SEGMENT_POOLS.outro)]))
+  const pool = Array.from(new Set([...matches, ...own]))
   const start = Math.abs(seed) % Math.max(1, matches.length || pool.length)
   const ring = [...pool.slice(start), ...pool.slice(0, start)]
   return Array.from({ length: n }, (_, i) => ring[i % ring.length])

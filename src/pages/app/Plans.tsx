@@ -20,7 +20,7 @@ const FEATURES: { label: string; values: (p: PlanDef) => Cell }[] = [
   { label: 'Histórico e download', values: () => true },
   { label: 'Variações por peça', values: (p) => (p.variations > 1 ? String(p.variations) : false) },
   { label: 'Perfis de negócio', values: (p) => String(p.profiles) },
-  { label: 'Download em lote (.zip)', values: (p) => p.id !== 'start' },
+  { label: 'Download em lote (.zip)', values: (p) => p.id === 'pro' || p.id === 'business' },
 ]
 
 function CellValue({ v }: { v: Cell }) {
@@ -60,6 +60,9 @@ export function Plans() {
   const [visible, setVisible] = useState(PLANS.findIndex((p) => p.highlight))
   const track = useRef<HTMLUListElement>(null)
   const cur = planDef(plan)
+  const isFree = plan === 'free'
+  // Sent here by the quota dialog (?motivo=limite): say why the person landed on this page.
+  const hitLimit = params.get('motivo') === 'limite'
   const rank = (id: PlanId) => PLANS.findIndex((x) => x.id === id)
   const price = (p: PlanDef) => (annual ? Math.round(((p.price * 10) / 12) * 100) / 100 : p.price)
 
@@ -128,9 +131,8 @@ export function Plans() {
             <h2 id="pl-current" className="text-sm text-fg-subtle">
               Seu plano atual
             </h2>
-            <p className="text-title-sm font-bold">
-              {cur.name} · R$ {cur.price}/mês
-            </p>
+            <p className="text-title-sm font-bold">{isFree ? `${cur.name} · sem custo` : `${cur.name} · R$ ${cur.price}/mês`}</p>
+            {isFree && <p className="text-caption text-fg-subtle">Assine um plano para criar mais conteúdos por mês.</p>}
           </div>
         </div>
         <div className="w-full sm:w-72">
@@ -153,6 +155,14 @@ export function Plans() {
           ]}
         />
       </div>
+
+      {hitLimit && (
+        <p role="status" className="rounded-2xl border border-amber-300 bg-warning-soft p-4 text-sm font-medium text-amber-950">
+          {isFree
+            ? 'Você usou os 5 conteúdos grátis deste mês. Assine um plano para continuar criando agora, ou espere a renovação no dia 1º.'
+            : `Você chegou ao limite do plano ${cur.name} neste mês.`}
+        </p>
+      )}
 
       <section aria-labelledby="pl-options">
         <h2 id="pl-options" className="sr-only">
@@ -192,7 +202,7 @@ export function Plans() {
                   ))}
                 </ul>
                 <Button variant={isCur ? 'secondary' : p.highlight ? 'primary' : 'dark'} disabled={isCur} className="mt-7 w-full" onClick={() => setCheckout(p)}>
-                  {isCur ? 'Plano atual' : rank(p.id) > rank(plan) ? `Fazer upgrade para ${p.name}` : `Mudar para ${p.name}`}
+                  {isCur ? 'Plano atual' : isFree ? `Assinar ${p.name}` : rank(p.id) > rank(plan) ? `Fazer upgrade para ${p.name}` : `Mudar para ${p.name}`}
                 </Button>
               </li>
             )

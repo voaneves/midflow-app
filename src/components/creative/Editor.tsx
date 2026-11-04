@@ -164,7 +164,7 @@ export function Editor({ open, onClose, creative, look, onSave }: Props) {
     const ctl = new AbortController()
     setRewriting(ctl)
     try {
-      const res = await rewriteCreativeWithAI({ creative: c, mode: aiMode, brandName: brand.name, segment: segment || 'beleza', city: brand.city, seed, signal: ctl.signal })
+      const res = await rewriteCreativeWithAI({ creative: c, mode: aiMode, brandName: brand.name, segment: segment || 'outro', city: brand.city, seed, signal: ctl.signal })
       set({
         headline: res.headline || c.headline,
         highlight: res.highlight || c.highlight,

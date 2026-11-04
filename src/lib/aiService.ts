@@ -1,6 +1,8 @@
 import { api } from './api'
 import { authHeaders } from './backend'
 import { GenerateError } from './generation'
+import { voiceKeyFor } from '../../server/voiceKey.ts'
+import type { SegmentVoice } from '../../server/templateVoices.ts'
 import type { AiErrorKind, Creative } from './types'
 
 export const DAILY_IMAGE_LIMIT_MESSAGE = 'Você atingiu o limite diário de imagens com IA. Usamos uma foto de banco por enquanto.'
@@ -59,7 +61,7 @@ export async function rewriteCreativeWithAI(opts: {
   }
 
   return {
-    ...rewriteCopyLocally(opts.creative, opts.mode, opts.brandName, opts.seed),
+    ...(await rewriteCopyLocally(opts.creative, opts.mode, opts.brandName, opts.seed, opts.segment)),
     engine: 'local',
   }
 }
@@ -102,12 +104,67 @@ export async function generateCustomImageWithAI(opts: {
   return null
 }
 
-export function rewriteCopyLocally(
+type RewriteMode = 'vendedor' | 'curto' | 'sofisticado' | 'descontraido' | 'educativo'
+type LocalRewrite = { headline: string; highlight?: string; sub?: string; bullets?: string[]; cta: string; caption: string }
+
+/**
+ * Offline rewrite for every segment except beleza, using the same vocabulary as the server template engine
+ * (server/templateVoices.ts), so a bakery never gets "garanta seu horário" or "protocolos".
+ */
+function rewriteWithVoice(
+  voice: SegmentVoice,
+  fillVoice: (template: string, vars: Record<string, string>) => string,
   c: Creative,
-  mode: 'vendedor' | 'curto' | 'sofisticado' | 'descontraido' | 'educativo',
+  mode: RewriteMode,
+  brand: string,
+  seed: number,
+): LocalRewrite {
+  const original = c.headline.replace(/[.!?]+$/, '').trim()
+  const words = original.split(/\s+/)
+  const coreTopic = words.slice(0, Math.min(4, words.length)).join(' ')
+  const tags = c.hashtags?.length ? `\n\n${c.hashtags.join(' ')}` : ''
+  const v = Math.abs(seed) % 3
+  const vars = { brand, orig: original, topic: coreTopic, city: '' }
+  const f = (template: string, extra: Record<string, string> = {}) => fillVoice(template, { ...vars, ...extra })
+
+  if (mode === 'curto') {
+    const r = voice.rewrite.curto
+    const head = words.length > 5 ? `${words.slice(0, 5).join(' ')}.` : `${original}.`
+    return {
+      headline: head,
+      highlight: head.split(' ').slice(-2).join(' ').replace('.', ''),
+      sub: f(r.sub),
+      bullets: c.bullets?.map((b) => b.split(' ').slice(0, 4).join(' ')),
+      cta: r.cta,
+      caption: `${f(r.caption, { head })}${c.hashtags?.length ? `\n\n${c.hashtags.slice(0, 5).join(' ')}` : ''}`,
+    }
+  }
+  const r = voice.rewrite[mode]
+  const head = f(r.heads[v])
+  return {
+    headline: head,
+    highlight: f(r.hls[v]),
+    sub: f(r.sub),
+    bullets: c.bullets?.length ? c.bullets : r.bullets?.map((b) => f(b)),
+    cta: r.cta,
+    caption: `${f(r.caption, { head })}${tags}`,
+  }
+}
+
+export async function rewriteCopyLocally(
+  c: Creative,
+  mode: RewriteMode,
   brandName?: string,
   seed = 1,
-): { headline: string; highlight?: string; sub?: string; bullets?: string[]; cta: string; caption: string } {
+  segment?: string,
+): Promise<LocalRewrite> {
+  const key = voiceKeyFor(segment, brandName, c.headline, c.sub, c.caption)
+  if (key !== 'beleza') {
+    // The per-segment copy tables are large; load them only when a non-beleza fallback is actually needed.
+    const { fillVoice, voiceFor } = await import('../../server/templateVoices.ts')
+    return rewriteWithVoice(voiceFor(segment, brandName, c.headline, c.sub, c.caption), fillVoice, c, mode, brandName || 'sua marca', seed)
+  }
+
   const original = c.headline.replace(/[.!?]+$/, '').trim()
   const words = original.split(/\s+/)
   const coreTopic = words.slice(0, Math.min(4, words.length)).join(' ')

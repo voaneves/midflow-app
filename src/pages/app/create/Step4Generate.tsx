@@ -330,7 +330,7 @@ export function Step4Generate() {
       />
     ) : (
       <ErrorState
-        title={status.kind === 'error' && status.code === 'quota' ? 'Limite do plano atingido' : status.kind === 'error' && status.code === 'auth' ? 'Sua sessão expirou' : 'Não foi possível gerar agora'}
+        title={status.kind === 'error' && status.code === 'quota' ? (state.plan === 'free' ? 'Seus conteúdos grátis acabaram' : 'Limite do plano atingido') : status.kind === 'error' && status.code === 'auth' ? 'Sua sessão expirou' : 'Não foi possível gerar agora'}
         text={status.kind === 'error' ? status.message : 'Tente novamente em instantes.'}
         onRetry={status.kind === 'error' && status.code ? undefined : () => start()}
         secondary={<ErrorActions code={status.kind === 'error' ? status.code : undefined} onOffline={() => start({ offline: true })} />}
@@ -751,11 +751,12 @@ export function Step4Generate() {
 
 /** Next steps for a failed generation: plan limit and expired session point to the right screen; anything else offers the offline default version. */
 function ErrorActions({ code, onOffline, size }: { code?: GenerateErrorCode; onOffline: () => void; size?: 'sm' }) {
+  const isFree = useApp((s) => s.plan === 'free')
   const link = `inline-flex items-center justify-center gap-2 rounded-xl bg-brand-700 text-sm font-semibold text-white hover:bg-brand-800 ${size === 'sm' ? 'h-10 px-3.5' : 'h-11 px-4'}`
   if (code === 'quota')
     return (
-      <Link to="/app/planos" className={link}>
-        <Sparkles className="size-4" aria-hidden /> Ver planos
+      <Link to="/app/planos?motivo=limite" className={link}>
+        <Sparkles className="size-4" aria-hidden /> {isFree ? 'Assinar um plano' : 'Ver planos'}
       </Link>
     )
   if (code === 'auth' || code === 'account')

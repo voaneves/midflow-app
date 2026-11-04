@@ -9,6 +9,7 @@ import {
   handleStripeEvent,
   hasLiveSubscription,
   parseCheckoutRequest,
+  profileLimit,
   signStripePayload,
   usagePeriod,
   verifyStripeWebhook,
@@ -31,7 +32,8 @@ const cfg: BillingConfig = {
 const dataModule = '../../src/lib/data.ts'
 
 test('plan limits match the plan catalog shown in the app', async () => {
-  const { PLANS } = (await import(dataModule)) as { PLANS: { id: BillingPlanId; contents: number; profiles: number; variations: number; price: number }[] }
+  const { ALL_PLANS: PLANS } = (await import(dataModule)) as { ALL_PLANS: { id: BillingPlanId; contents: number; profiles: number; variations: number; price: number }[] }
+  assert.equal(PLANS.length, 4)
   assert.equal(PLANS.length, Object.keys(PLAN_LIMITS).length)
   for (const p of PLANS) {
     assert.deepEqual(PLAN_LIMITS[p.id], { contents: p.contents, profiles: p.profiles, variations: p.variations, priceBrl: p.price }, p.id)
@@ -52,7 +54,7 @@ test('billingConfigFromEnv needs the secret key and maps price ids', () => {
 test('parseCheckoutRequest accepts only known plans and intervals', () => {
   assert.deepEqual(parseCheckoutRequest({ plan: 'pro' }), { plan: 'pro', interval: 'month' })
   assert.deepEqual(parseCheckoutRequest({ plan: 'business', interval: 'year' }), { plan: 'business', interval: 'year' })
-  for (const bad of [null, 'pro', {}, { plan: 'enterprise' }, { plan: 'pro', interval: 'week' }, { plan: '__proto__' }, { plan: 'toString' }]) {
+  for (const bad of [null, 'pro', {}, { plan: 'enterprise' }, { plan: 'pro', interval: 'week' }, { plan: '__proto__' }, { plan: 'toString' }, { plan: 'free' }]) {
     assert.equal(parseCheckoutRequest(bad), null)
   }
 })
@@ -95,6 +97,8 @@ test('createCheckoutSession prefers an existing customer and rejects unknown pla
 
   const never = (async () => assert.fail('must not call Stripe')) as unknown as typeof fetch
   assert.deepEqual(await createCheckoutSession(cfg, { userId: USER, plan: 'gold' }, never), { ok: false, status: 400, error: 'Plano inválido.' })
+  // 'free' is not for sale: it is never sent to Stripe nor stored.
+  assert.deepEqual(await createCheckoutSession(cfg, { userId: USER, plan: 'free' }, never), { ok: false, status: 400, error: 'Plano inválido.' })
   const noAnnual = await createCheckoutSession(cfg, { userId: USER, plan: 'start', interval: 'year' }, never)
   assert.equal(noAnnual.ok, false)
   assert.equal(!noAnnual.ok && noAnnual.status, 503)
@@ -193,6 +197,13 @@ test('checkout.session.completed with an unpaid session stays incomplete; non-su
   assert.equal(handleStripeEvent(ev('checkout.session.completed', { mode: 'payment' })), null)
 })
 
+test('webhook events never carry the free plan: metadata.plan "free" is ignored', () => {
+  const done = handleStripeEvent(ev('checkout.session.completed', { mode: 'subscription', client_reference_id: USER, metadata: { plan: 'free' }, payment_status: 'paid' }))
+  assert.equal(done?.plan, undefined)
+  const sub = handleStripeEvent(ev('customer.subscription.updated', { id: 'sub_1', status: 'active', metadata: { user_id: USER, plan: 'free' }, items: { data: [] } }))
+  assert.equal(sub?.plan, undefined)
+})
+
 test('checkout.session.completed ignores an unknown plan in metadata', () => {
   const u = handleStripeEvent(ev('checkout.session.completed', { mode: 'subscription', client_reference_id: USER, metadata: { plan: 'enterprise' }, payment_status: 'paid' }))
   assert.equal(u?.plan, undefined)
@@ -280,10 +291,13 @@ test('effectivePlan grants a plan only while the subscription is entitled', () =
   assert.equal(effectivePlan({ plan: 'pro', status: 'active' }), 'pro')
   assert.equal(effectivePlan({ plan: 'business', status: 'trialing' }), 'business')
   assert.equal(effectivePlan({ plan: 'business', status: 'past_due' }), 'business')
-  assert.equal(effectivePlan({ plan: 'pro', status: 'canceled' }), 'start')
-  assert.equal(effectivePlan({ plan: 'pro', status: 'incomplete' }), 'start')
-  assert.equal(effectivePlan({ plan: 'platinum', status: 'active' }), 'start')
-  assert.equal(effectivePlan(null), 'start')
+  assert.equal(effectivePlan({ plan: 'start', status: 'active' }), 'start')
+  assert.equal(effectivePlan({ plan: 'pro', status: 'canceled' }), 'free')
+  assert.equal(effectivePlan({ plan: 'pro', status: 'incomplete' }), 'free')
+  assert.equal(effectivePlan({ plan: 'platinum', status: 'active' }), 'free')
+  // 'free' is never stored; a row that says so still does not make it a paid plan.
+  assert.equal(effectivePlan({ plan: 'free', status: 'active' }), 'free')
+  assert.equal(effectivePlan(null), 'free')
 })
 
 test('usagePeriod is the UTC calendar month', () => {
@@ -305,6 +319,15 @@ test('checkQuota enforces the monthly allowance of each plan', () => {
   assert.equal(checkQuota('pro', 55, 5).allowed, true)
   assert.equal(checkQuota('business', 150, 1).allowed, false)
   assert.equal(checkQuota('business', 200, 0).remaining, 0)
+})
+
+test('the free plan allows exactly one full pack (4 posts + 1 Stories) per month and one brand profile', () => {
+  assert.deepEqual(checkQuota('free', 4, 1), { allowed: true, plan: 'free', limit: 5, used: 4, remaining: 1 })
+  assert.equal(checkQuota('free', 5, 1).allowed, false)
+  assert.equal(checkQuota('free', 0, generationCost(4, 1)).allowed, true)
+  assert.equal(checkQuota('free', 1, generationCost(4, 1)).allowed, false)
+  assert.equal(profileLimit('free'), 1)
+  assert.equal(PLAN_LIMITS.free.priceBrl, 0)
 })
 
 /* ------------------------------ db ------------------------------ */

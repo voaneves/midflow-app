@@ -2,11 +2,11 @@ import { toast } from '../components/ui/toast-store'
 import { isBillingEnabled, openBillingPortal } from './backend'
 import { useApp } from './store'
 
-/** True for a signed-in cloud account with billing enabled and an active paid plan (the only case a Stripe portal exists). */
+/** True for a signed-in cloud account with billing enabled and an active paid plan, i.e. any plan but free (the only case a Stripe portal exists). */
 export function useCanManageSubscription(): boolean {
   const accountId = useApp((s) => s.user?.id)
   const plan = useApp((s) => s.plan)
-  return isBillingEnabled() && !!accountId && plan !== 'start'
+  return isBillingEnabled() && !!accountId && plan !== 'free'
 }
 
 /** Opens the Stripe Customer Portal in this tab. Returns false (after an error toast) when it could not be opened. */

@@ -95,6 +95,20 @@ const UNSPLASH_TOPIC_POOLS: { keywords: RegExp; segments?: string[]; ids: string
     ],
   },
   {
+    keywords: /\bpao\b|paes|padaria|bolo|confeitaria|croissant|bread|bakery|bakehouse|pastr|cupcake|torta|fornada|doceria/i,
+    segments: ['alimentacao'],
+    ids: [
+      'photo-1509440159596-0249088772ff', // Artisan bread loaves
+      'photo-1608198093002-ad4e005484ec', // Assorted fresh breads
+      'photo-1517433670267-08bbd4be890f', // Bakery display with fresh bread
+      'photo-1549931319-a545dcf3bc73', // Sliced rustic bread
+      'photo-1555507036-ab1f4038808a', // Croissants fresh from the oven
+      'photo-1517433367423-c7e5b0f35086', // Bagels, donuts and pastries
+      'photo-1578985545062-69928b1d9587', // Chocolate cake
+      'photo-1486427944299-d1955d23e34d', // Cupcakes
+    ],
+  },
+  {
     keywords: /produto|home care|kit|mascara|oleo|leave-in|cosmetic|serum/i,
     segments: ['beleza', 'moda', 'saude'],
     ids: [
@@ -204,12 +218,12 @@ const KEYWORD_PHOTO_MAP: { keywords: RegExp; photos: string[]; segments?: string
   { keywords: /equipe|bastidor|espaco|salao|clinica|profissiona|atendimento|rotina/i, photos: ['team', 'booking', 'interior', 'smile-tall'] },
   { keywords: /agenda|horario|vaga|semana|marcar|whatsapp|direct/i, photos: ['booking', 'hair-waves', 'smile-thumb', 'team'] },
   { keywords: /presente|voucher|dia da|natal|mae|mulher|namorad|especial|mimo/i, photos: ['gift', 'products', 'smile-tall', 'story-smile'] },
-  { keywords: /\bcafe\b|manha|expresso|padaria|bolo|confeitaria|\bcha\b|brunch/i, photos: ['coffee', 'food-dessert', 'food-table', 'food-kitchen'], segments: ['alimentacao', 'servicos', 'outro'] },
+  { keywords: /\bcafe\b|manha|expresso|padaria|bolo|confeitaria|\bcha\b|brunch|\bpao\b|\bpaes\b|croissant|bread|bakery|torta|fornada|doceria/i, photos: ['coffee', 'food-dessert', 'food-table', 'food-kitchen'], segments: ['alimentacao', 'servicos', 'outro'] },
   { keywords: /comida|prato|almoco|jantar|restaurante|hamburguer|pizza|gastronomia|sabor|delivery|cardapio|chefe/i, photos: ['food', 'food-burger', 'food-kitchen', 'food-table', 'food-delivery'], segments: ['alimentacao'] },
   { keywords: /treino|academia|muscula|fitness|funcional|saude fisica|energia|aluno|peso|esporte|corrida/i, photos: ['gym-training', 'gym-coach', 'gym-functional', 'gym-results', 'gym'], segments: ['fitness', 'saude'] },
   { keywords: /dente|sorriso|odonto|clareamento|ortodontia|implante|lente|consulta|boca|fio dental/i, photos: ['dental-smile', 'dental', 'dental-consult', 'dental-care', 'dental-tech'], segments: ['saude'] },
   { keywords: /imovel|casa|apartamento|morar|aluguel|financiamento|corretor|arquitetura|decorac|sala|quarto/i, photos: ['interior', 'home-keys', 'home-kitchen', 'home-facade', 'home-building', 'home-agent'], segments: ['imoveis', 'servicos', 'outro'] },
-  { keywords: /\bpet\b|cachorro|\bcão\b|\bgato\b|veterinar|banho e tosa|\bração\b|filhote|tutor/i, photos: ['dog', 'pet-grooming', 'pet-vet', 'pet-play', 'pet-cat'], segments: ['pet'] },
+  { keywords: /\bpet\b|cachorro|\bcao\b|\bgato\b|veterinar|banho e tosa|\bracao\b|filhote|tutor/i, photos: ['dog', 'pet-grooming', 'pet-vet', 'pet-play', 'pet-cat'], segments: ['pet'] },
   { keywords: /gestao|consultoria|empresa|negocio|financa|marketing|produtividade|ferramenta|escritorio|lucro|vendas|mei|contabil/i, photos: ['laptop', 'office-team', 'office-meeting', 'office-tools', 'office-client'], segments: ['servicos', 'imoveis', 'outro'] },
   { keywords: /moda|roupa|look|vestido|blusa|colecao|estilo|loja|tendenc|acessorio|vitrine/i, photos: ['fashion-rack', 'fashion-look', 'fashion-store', 'fashion-client', 'fashion-detail'], segments: ['moda', 'beleza'] },
 ]
@@ -226,8 +240,30 @@ const SEGMENT_DEFAULT_POOL: Record<string, string[]> = {
   outro: ['laptop', 'office-team', 'office-client', 'office-meeting', 'office-tools', 'coffee'],
 }
 
+/** Which segment a local photo id belongs to (by name; anything else is the salon library). */
+export function photoFamily(id: string): string {
+  if (/^(food|coffee)/.test(id)) return 'alimentacao'
+  if (/^gym/.test(id)) return 'fitness'
+  if (/^dental/.test(id)) return 'saude'
+  if (/^(home-|interior)/.test(id)) return 'imoveis'
+  if (/^(dog|pet-)/.test(id)) return 'pet'
+  if (/^(laptop|office)/.test(id)) return 'servicos'
+  if (/^fashion/.test(id)) return 'moda'
+  return 'beleza'
+}
+
+/** Segments whose topic entries may also use the salon library (clinic skin care, nails in fashion). */
+const BEAUTY_ADJACENT = new Set(['beleza', 'saude', 'moda'])
+
+/** Lowercase without accents, so "horário" and "horario" hit the same keyword. */
+export function foldText(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 /**
  * Seleciona uma foto local diferente para cada item do pacote com base na semântica do texto e na seed.
+ * Uma foto nunca vem de outro segmento: as entradas sem `segments` (produto, cliente, agenda, equipe...) só contribuem com as
+ * fotos que já fazem parte do conjunto do segmento. Sem isso, uma padaria que cita "horário" ou "cliente" recebia foto de salão.
  */
 export function selectContextualPhotoId(opts: {
   text: string
@@ -238,13 +274,22 @@ export function selectContextualPhotoId(opts: {
   usedIds?: Set<string>
 }): string {
   const { text, segment, themeId, order, seed, usedIds } = opts
-  const searchStr = `${themeId || ''} ${text}`.toLowerCase()
+  const searchStr = foldText(`${themeId || ''} ${text}`)
+  const segPool = SEGMENT_DEFAULT_POOL[segment] || SEGMENT_DEFAULT_POOL.outro
 
   let matched: string[] = []
   for (const entry of KEYWORD_PHOTO_MAP) {
     if (entry.segments && !entry.segments.includes(segment)) continue
     if (entry.keywords.test(searchStr)) {
-      matched.push(...entry.photos)
+      matched.push(
+        ...entry.photos.filter((id) => {
+          if (segPool.includes(id)) return true
+          // Topic entries scoped to this segment may bring its own family (and the salon library, for beauty-adjacent segments).
+          if (!entry.segments) return false
+          const family = photoFamily(id)
+          return family === segment || (family === 'beleza' && BEAUTY_ADJACENT.has(segment))
+        }),
+      )
     }
   }
   matched = Array.from(new Set(matched))
@@ -255,7 +300,6 @@ export function selectContextualPhotoId(opts: {
     return chosen
   }
 
-  const segPool = SEGMENT_DEFAULT_POOL[segment] || SEGMENT_DEFAULT_POOL.outro
   const candidates = Array.from(new Set([...matched, ...segPool]))
 
   const available = usedIds ? candidates.filter((id) => !usedIds.has(id)) : candidates
@@ -424,14 +468,21 @@ export function buildApiImageUrl(opts: ImageGenOptions): string {
  */
 /** Topic photos that match the card text first, then the segment pool (no duplicates). */
 function editorialPool(opts: Pick<ImageGenOptions, 'segment' | 'themeId' | 'customTheme' | 'headline' | 'prompt'>): string[] {
+  return editorialPoolWithTopics(opts).pool
+}
+
+/** `topics` = how many leading ids of `pool` matched the card text (the rest is the plain segment pool). */
+function editorialPoolWithTopics(opts: Pick<ImageGenOptions, 'segment' | 'themeId' | 'customTheme' | 'headline' | 'prompt'>): { pool: string[]; topics: number } {
   const segment = opts.segment || 'beleza'
-  const searchStr = `${opts.themeId || ''} ${opts.customTheme || ''} ${opts.headline || ''} ${opts.prompt || ''}`.toLowerCase()
-  const pool: string[] = []
+  const searchStr = foldText(`${opts.themeId || ''} ${opts.customTheme || ''} ${opts.headline || ''} ${opts.prompt || ''}`)
+  const matched: string[] = []
   for (const entry of UNSPLASH_TOPIC_POOLS) {
     if (entry.segments && !entry.segments.includes(segment)) continue
-    if (entry.keywords.test(searchStr)) pool.push(...entry.ids)
+    if (entry.keywords.test(searchStr)) matched.push(...entry.ids)
   }
-  return Array.from(new Set([...pool, ...(UNSPLASH_SEGMENT_POOLS[segment] || UNSPLASH_SEGMENT_POOLS.outro)]))
+  const topicIds = Array.from(new Set(matched))
+  const pool = Array.from(new Set([...topicIds, ...(UNSPLASH_SEGMENT_POOLS[segment] || UNSPLASH_SEGMENT_POOLS.outro)]))
+  return { pool, topics: topicIds.length }
 }
 
 /** Every catalogued id: the only values `/api/image?photo=` accepts. */
@@ -446,9 +497,11 @@ export const isEditorialPhotoId = (id: string | null | undefined): id is string 
 export function selectEditorialPhotoId(
   opts: Pick<ImageGenOptions, 'segment' | 'themeId' | 'customTheme' | 'headline' | 'prompt'> & { order: number; seed: number; usedIds: Set<string>; usedSameKind?: Set<string> },
 ): string {
-  const pool = editorialPool(opts)
-  const start = Math.abs(opts.seed * 7 + opts.order * 3) % pool.length
-  const ring = pool.map((_, k) => pool[(start + k) % pool.length])
+  const { pool, topics } = editorialPoolWithTopics(opts)
+  // Start inside the topic photos (a bakery card gets bread, not just any food), then go on to the rest of the segment pool.
+  const start = Math.abs(opts.seed * 7 + opts.order * 3) % (topics || pool.length)
+  const topicIds = pool.slice(0, topics)
+  const ring = topics ? [...topicIds.slice(start), ...topicIds.slice(0, start), ...pool.slice(topics)] : pool.map((_, k) => pool[(start + k) % pool.length])
   const chosen = ring.find((id) => !opts.usedIds.has(id)) ?? ring.find((id) => !opts.usedSameKind?.has(id)) ?? ring[0]
   opts.usedIds.add(chosen)
   opts.usedSameKind?.add(chosen)

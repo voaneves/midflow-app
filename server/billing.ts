@@ -2,15 +2,15 @@
  * Stripe billing over the plain REST API (fetch + Web Crypto), so it runs in Node and in the Cloudflare Worker.
  * Nothing here reads process.env or touches routes: callers pass configuration in and persist what comes out.
  */
-import { PLAN_LIMITS, effectiveBillingPlan, isBillingPlan, type BillingPlanId } from '../src/lib/backend/planLimits.ts'
+import { PLAN_LIMITS, effectiveBillingPlan, isPaidPlan, type BillingPlanId, type PaidPlanId } from '../src/lib/backend/planLimits.ts'
 
-export type { BillingPlanId }
+export type { BillingPlanId, PaidPlanId }
 export type BillingInterval = 'month' | 'year'
 
 export interface BillingConfig {
   secretKey: string
   /** Stripe price ids per plan and interval. `year` is optional per plan. */
-  prices: Partial<Record<BillingPlanId, { month?: string; year?: string }>>
+  prices: Partial<Record<PaidPlanId, { month?: string; year?: string }>>
   /** Public site URL including the Pages base, no trailing slash. Example: https://voaneves.com/midflow-app */
   appUrl: string
 }
@@ -47,16 +47,16 @@ export interface CheckoutInput {
 export type CheckoutResult = { ok: true; url: string; id: string } | { ok: false; status: number; error: string }
 
 /** Validates untrusted client input; the server never accepts a price id or amount from the browser. */
-export function parseCheckoutRequest(body: unknown): { plan: BillingPlanId; interval: BillingInterval } | null {
+export function parseCheckoutRequest(body: unknown): { plan: PaidPlanId; interval: BillingInterval } | null {
   if (!body || typeof body !== 'object') return null
   const { plan, interval } = body as Record<string, unknown>
-  if (!isBillingPlan(plan)) return null
+  if (!isPaidPlan(plan)) return null
   if (interval !== undefined && interval !== 'month' && interval !== 'year') return null
   return { plan, interval: interval ?? 'month' }
 }
 
 export async function createCheckoutSession(cfg: BillingConfig, input: CheckoutInput, fetchImpl: typeof fetch = fetch): Promise<CheckoutResult> {
-  if (!isBillingPlan(input.plan)) return { ok: false, status: 400, error: 'Plano inválido.' }
+  if (!isPaidPlan(input.plan)) return { ok: false, status: 400, error: 'Plano inválido.' }
   const interval: BillingInterval = input.interval === 'year' ? 'year' : 'month'
   const price = cfg.prices[input.plan]?.[interval]
   if (!price) return { ok: false, status: 503, error: 'Este plano ainda não está disponível para assinatura.' }
@@ -235,7 +235,7 @@ export async function signStripePayload(rawBody: string, secret: string, timesta
 export interface SubscriptionUpdate {
   /** Null when the event carries no user id; look the user up by stripeCustomerId. */
   userId: string | null
-  plan?: BillingPlanId
+  plan?: PaidPlanId
   /** Stripe subscription status: active, trialing, past_due, canceled, unpaid, incomplete... */
   status: string
   stripeCustomerId?: string
@@ -253,9 +253,9 @@ const idOf = (v: unknown): string | undefined => (typeof v === 'string' ? str(v)
 const iso = (sec: unknown): string | undefined => (typeof sec === 'number' && sec > 0 ? new Date(sec * 1000).toISOString() : undefined)
 
 /** Reverse lookup of a Stripe price id to our plan, for subscriptions created without metadata. */
-export function planForPrice(cfg: Pick<BillingConfig, 'prices'>, priceId: string | undefined): BillingPlanId | undefined {
+export function planForPrice(cfg: Pick<BillingConfig, 'prices'>, priceId: string | undefined): PaidPlanId | undefined {
   if (!priceId) return undefined
-  for (const [plan, p] of Object.entries(cfg.prices) as [BillingPlanId, { month?: string; year?: string }][]) {
+  for (const [plan, p] of Object.entries(cfg.prices) as [PaidPlanId, { month?: string; year?: string }][]) {
     if (p.month === priceId || p.year === priceId) return plan
   }
   return undefined
@@ -277,7 +277,7 @@ function planFromEvent(event: StripeEvent, cfg: Pick<BillingConfig, 'prices'>): 
       if (obj.mode !== 'subscription') return null
       const meta = (obj.metadata ?? {}) as Record<string, unknown>
       const userId = str(obj.client_reference_id) ?? str(meta.user_id) ?? null
-      const plan = isBillingPlan(meta.plan) ? meta.plan : undefined
+      const plan = isPaidPlan(meta.plan) ? meta.plan : undefined
       // payment_status "paid" (or no_payment_required for trials and 100% coupons) means the plan can be unlocked now.
       const paid = obj.payment_status === 'paid' || obj.payment_status === 'no_payment_required'
       return {
@@ -295,7 +295,7 @@ function planFromEvent(event: StripeEvent, cfg: Pick<BillingConfig, 'prices'>): 
       const items = (obj.items as { data?: { price?: { id?: string }; current_period_end?: number }[] } | undefined)?.data ?? []
       const priceId = items[0]?.price?.id
       // The price is what Stripe actually charges; metadata is only a hint (it can be edited in the dashboard), so the price wins.
-      const plan = planForPrice(cfg, priceId) ?? (isBillingPlan(meta.plan) ? meta.plan : undefined)
+      const plan = planForPrice(cfg, priceId) ?? (isPaidPlan(meta.plan) ? meta.plan : undefined)
       const deleted = event.type === 'customer.subscription.deleted'
       return {
         userId: str(meta.user_id) ?? null,
@@ -318,8 +318,8 @@ function planFromEvent(event: StripeEvent, cfg: Pick<BillingConfig, 'prices'>): 
 /* ------------------------------------------------------------------ */
 
 /**
- * The plan whose limits apply. No subscription, or one that ended, falls back to the Start allowance,
- * matching the app, where every new account begins on Start.
+ * The plan whose limits apply. No subscription, or one that ended, falls back to the free plan (5 contents/month),
+ * matching the app, where every new account begins on Grátis. 'free' is never stored in subscriptions.
  */
 export function effectivePlan(sub: { plan?: string | null; status?: string | null } | null | undefined): BillingPlanId {
   return effectiveBillingPlan(sub)

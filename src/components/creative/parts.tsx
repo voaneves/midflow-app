@@ -263,7 +263,7 @@ export function ExportHost() {
     >
       <div className="p-5 md:p-6">
         <p role="status" className="sr-only">
-          {busy ? `Gerando ${files.length} de ${st.jobs.length}` : `${files.length} arquivos prontos`}
+          {busy ? `Gerando ${files.length} de ${st.jobs.length}` : `${files.length} ${files.length === 1 ? 'arquivo pronto' : 'arquivos prontos'}`}
         </p>
         <div className={cx('grid gap-3', many ? 'grid-cols-2 sm:grid-cols-4' : 'mx-auto max-w-[300px]')}>
           {st.jobs.map((j, i) => (

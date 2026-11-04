@@ -364,7 +364,7 @@ export function Brand() {
                 nav('/app/planos')
               }}
             >
-              Ver planos
+              {plan === 'free' ? 'Assinar um plano' : 'Ver planos'}
             </Button>
           </div>
         }
@@ -376,7 +376,7 @@ export function Brand() {
               O plano <strong>{currentPlan.name}</strong> permite até <strong>{maxProfiles} perfis de negócio</strong>.
             </span>
           </p>
-          <p className="text-sm text-fg-muted">Para gerenciar mais negócios ou clientes de agência na mesma conta, faça upgrade para o Pro (até 2 perfis) ou Business (até 5 perfis).</p>
+          <p className="text-sm text-fg-muted">Para gerenciar mais negócios ou clientes de agência na mesma conta, assine o Pro (até 2 perfis) ou o Business (até 5 perfis).</p>
         </div>
       </Dialog>
 

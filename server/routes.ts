@@ -277,7 +277,7 @@ type Handler = (req: IncomingMessage, res: ServerResponse, url: URL, params: str
 
 /* ---------------- accounts, quota and AI outcome ---------------- */
 
-const PLAN_NAMES: Record<BillingPlanId, string> = { start: 'Start', pro: 'Pro', business: 'Business' }
+const PLAN_NAMES: Record<BillingPlanId, string> = { free: 'Grátis', start: 'Start', pro: 'Pro', business: 'Business' }
 
 interface Gate {
   user: AuthenticatedUser | null
@@ -346,7 +346,11 @@ function isNetworkError(err: unknown): boolean {
 }
 
 function quotaExceeded(plan: BillingPlanId, limit: number, used: number): HttpError {
-  return new HttpError(402, `Você já usou os ${limit} conteúdos do plano ${PLAN_NAMES[plan]} neste mês. Faça upgrade para continuar.`, {
+  const message =
+    plan === 'free'
+      ? `Você já usou os ${limit} conteúdos grátis deste mês. Assine um plano para continuar criando. Seus conteúdos grátis renovam no dia 1º.`
+      : `Você já usou os ${limit} conteúdos do plano ${PLAN_NAMES[plan]} neste mês. Faça upgrade para continuar.`
+  return new HttpError(402, message, {
     code: 'quota_exceeded',
     plan,
     limit,
@@ -392,13 +396,15 @@ interface AiFailure {
   kind: AiErrorKind | null
   code: AiErrorCode | null
   retryable: boolean
-  /** Template answer because the caller has no account (reported as kind daily_cap + `code: "account_required"`). */
+  /** Template answer because the caller has no account (reported as `code: "account_required"` with no error kind: it is not a failure). */
   accountRequired?: boolean
 }
 
 /** Why the answer is not model output. Null kind = the model answered. Only transient failures are worth retrying. */
 function aiFailure(engine: string, aiAllowed: boolean, aiError: string | undefined, accountRequired = false): AiFailure {
   if (engine !== 'template') return { kind: null, code: null, retryable: false }
+  // No account is not an AI failure (and not a daily cap): the client reads `code: "account_required"` and offers sign-up.
+  if (accountRequired) return { kind: null, code: null, retryable: false, accountRequired: true }
   const code: AiErrorCode = !aiAllowed ? 'daily_cap' : !aiEnabled() ? 'not_configured' : classifyAiError(aiError)
   const kind = aiErrorKindOf(code)
   return { kind, code, retryable: kind === 'transient', ...(accountRequired ? { accountRequired: true } : {}) }
@@ -687,7 +693,7 @@ const routes: Record<string, Handler> = {
     // Only AI-delivered content is charged. A template answer, whatever the reason (transient failure, daily cap, AI not configured),
     // gives the reservation back in full: the client retries a transient one by itself, and nothing paid was delivered.
     const delivered = generationCost(generation.posts.length, generation.stories.length)
-    const usage = await chargeUsage(gate, failure.kind ? 0 : delivered)
+    const usage = await chargeUsage(gate, failure.kind || failure.accountRequired ? 0 : delivered)
     sendJson(res, 200, {
       success: true,
       generation,

@@ -28,6 +28,11 @@ export interface AuthProvider {
    * the session is picked up on return via getSession / onChange.
    */
   signInWithOAuth(provider: 'google'): Promise<{ ok: true } | { ok: false; error: string }>
+  /**
+   * Whether the OAuth provider is switched on in the project, so the UI can avoid sending people to a raw error page.
+   * Resolves true when it cannot tell (offline, unexpected answer). Optional: adapters without OAuth omit it.
+   */
+  providerEnabled?(provider: 'google'): Promise<boolean>
   signOut(): Promise<void>
   /** Sends the "set a new password" e-mail. The local adapter has no passwords, so it reports that it is unavailable. */
   resetPassword(email: string): Promise<{ ok: true } | { ok: false; error: string }>

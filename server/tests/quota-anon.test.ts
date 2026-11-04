@@ -25,7 +25,9 @@ test('template mode: an anonymous generate gets the honest template and never re
   assert.equal(r.status, 200)
   assert.equal(r.json.generation.engine, 'template')
   assert.equal(r.json.code, 'account_required')
-  assert.equal(r.json.aiErrorKind, 'daily_cap')
+  // No account is not an AI failure: no error kind (it used to be reported as daily_cap), only the account_required code.
+  assert.equal(r.json.aiErrorKind, null)
+  assert.notEqual(r.json.aiErrorKind, 'daily_cap')
   assert.equal(r.json.retryable, false)
   assert.equal(aiCalls().length, 0)
   // The single daily unit is still available for a signed-in caller.

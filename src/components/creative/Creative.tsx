@@ -508,7 +508,8 @@ function StoryBottom({ light }: { light: boolean }) {
 
 /* ---------- main canvas ---------- */
 
-export function CreativeCanvas({ c, style, palette, H, brand, chrome }: { c: CreativeT; style: StyleId; palette: Palette; H: number; brand: BrandMark; chrome: boolean }) {
+export function CreativeCanvas({ c, style, palette, H, brand: liveBrand, chrome }: { c: CreativeT; style: StyleId; palette: Palette; H: number; brand: BrandMark; chrome: boolean }) {
+  const brand: BrandMark = c.brand ? { ...c.brand } : liveBrand
   const look = lookFor(style, palette)
   const story = c.kind === 'story'
   const square = H === 1080

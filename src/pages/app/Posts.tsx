@@ -92,7 +92,7 @@ export function Posts() {
         />
       </div>
       <p className="sr-only" aria-live="polite">
-        {groups.reduce((n, g) => n + g.items.length, 0)} gerações
+        {(() => { const n = groups.reduce((a, g) => a + g.items.length, 0); return `${n} ${n === 1 ? 'geração' : 'gerações'}` })()}
       </p>
 
       {groups.map((grp) => (
@@ -118,7 +118,7 @@ export function Posts() {
                           </span>
                         </h3>
                         <p className="mt-0.5 text-sm text-fg-subtle">
-                          {new Date(g.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {OBJECTIVES.find((o) => o.id === g.params.objective)?.label} · {STYLES.find((s) => s.id === g.params.style)?.label} · {g.posts.length} posts e {g.stories.length} stories
+                          {new Date(g.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {OBJECTIVES.find((o) => o.id === g.params.objective)?.label} · {STYLES.find((s) => s.id === g.params.style)?.label} · {g.posts.length} {g.posts.length === 1 ? 'post' : 'posts'} e {g.stories.length} {g.stories.length === 1 ? 'story' : 'stories'}
                         </p>
                       </div>
                       <Menu
@@ -131,7 +131,7 @@ export function Posts() {
                             icon: <FolderPlus className="size-4" />,
                             onClick: () => {
                               const n = save(all.map((creative) => ({ creative, gen: g })))
-                              toast(n ? `${n} conteúdos salvos na biblioteca` : 'Já está tudo na biblioteca')
+                              toast(n ? `${n} ${n === 1 ? 'conteúdo salvo' : 'conteúdos salvos'} na biblioteca` : 'Já está tudo na biblioteca')
                             },
                           },
                         ]}

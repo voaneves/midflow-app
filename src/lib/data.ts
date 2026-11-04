@@ -346,9 +346,10 @@ function simpleSegment(
   return { id, label, short, example, palette, hashtags, ctas, themes }
 }
 
-const ctaGeneric = (main: string, extra: string[] = []): Record<ObjectiveId, string[]> => ({
+/** `promocao` is segment vocabulary (food: "Peça já"; gym: "Garanta sua matrícula"), never shared across segments. */
+const ctaGeneric = (main: string, extra: string[] = [], promocao: string[] = ['Aproveite agora', 'Garanta o seu', 'Fale conosco']): Record<ObjectiveId, string[]> => ({
   atrair: [main, ...extra, 'Fale conosco'],
-  promocao: ['Aproveite agora', 'Garanta o seu', 'Peça já'],
+  promocao,
   educar: ['Salve este post', 'Compartilhe', 'Veja mais dicas'],
   marca: ['Conheça nossa história', 'Siga para mais', 'Venha nos conhecer'],
   outro: ['Saiba mais', 'Fale conosco', 'Chame no direct'],
@@ -359,7 +360,7 @@ const alimentacao = simpleSegment(
   'Restaurante de comida caseira com ingredientes selecionados, almoço executivo e delivery na região central.',
   ['#3B1F12', '#C8642B', '#F2B26B', '#FBF1E4'],
   ['#Gastronomia', '#ComidaBoa', '#Restaurante'],
-  ctaGeneric('Veja nosso cardápio', ['Peça pelo delivery', 'Reserve sua mesa']),
+  ctaGeneric('Veja nosso cardápio', ['Vem provar', 'Peça pelo delivery', 'Reserve sua mesa'], ['Peça já', 'Faça sua encomenda', 'Aproveite agora']),
   [
     { id: 'prato', label: 'Prato em destaque', desc: 'O carro-chefe da casa', photo: 'food', photos: ['food', 'food-burger', 'coffee'], cats: ['ia'], tag: 'Restaurante', objective: 'atrair', hashtags: ['#PratoDoDia', '#ComidaCaseira'],
       posts: [{ variant: 'photo', headline: 'Sabor que conecta pessoas.', highlight: 'conecta pessoas.', sub: 'Ingredientes selecionados e pratos que encantam.', photo: 'food' }, { variant: 'icons', headline: 'Feito na hora, do nosso jeito.', highlight: 'do nosso jeito.', icons: [{ icon: 'leaf', label: 'Ingredientes frescos' }, { icon: 'flame', label: 'Feito na hora' }, { icon: 'heart', label: 'Receita da casa' }], photo: 'food' }],
@@ -387,7 +388,7 @@ const fitness = simpleSegment(
   'Academia com musculação, funcional e acompanhamento personalizado, aberta das 5h às 23h.',
   ['#111418', '#FF5A36', '#FFB199', '#F4F4F2'],
   ['#Treino', '#VidaSaudavel', '#Academia'],
-  ctaGeneric('Conheça nossos planos', ['Agende uma aula experimental']),
+  ctaGeneric('Conheça nossos planos', ['Agende uma aula experimental'], ['Garanta sua matrícula', 'Aproveite agora', 'Chame no direct']),
   [
     { id: 'disciplina', label: 'Disciplina e motivação', desc: 'Frases e rotina', photo: 'gym-training', photos: ['gym-training', 'gym-coach', 'gym'], cats: ['ia'], tag: 'Treino', objective: 'atrair', hashtags: ['#Disciplina', '#Foco'],
       posts: [{ variant: 'icons', headline: 'Disciplina hoje, resultados sempre.', highlight: 'resultados sempre.', icons: [{ icon: 'zap', label: 'Mais energia' }, { icon: 'heart', label: 'Saúde em dia' }, { icon: 'user', label: 'Acompanhamento personalizado' }], photo: 'gym-training' }],
@@ -415,7 +416,7 @@ const saude = simpleSegment(
   'Clínica odontológica com tratamentos estéticos, ortodontia e atendimento humanizado.',
   ['#0D3B66', '#3FA7D6', '#BFE3F2', '#F4FAFD'],
   ['#Odontologia', '#Sorriso', '#SaudeBucal'],
-  ctaGeneric('Agende uma avaliação', ['Agende uma consulta']),
+  ctaGeneric('Agende uma avaliação', ['Agende uma consulta'], ['Agende sua avaliação', 'Aproveite a condição', 'Fale conosco']),
   [
     { id: 'sorriso', label: 'Estética do sorriso', desc: 'Clareamento e lentes', photo: 'dental-smile', photos: ['dental-smile', 'dental-care', 'dental-consult'], cats: ['ia'], tag: 'Odontologia', objective: 'atrair', hashtags: ['#Clareamento', '#SorrisoPerfeito'],
       posts: [{ variant: 'photo', headline: 'Seu sorriso em boas mãos.', highlight: 'boas mãos.', sub: 'Tratamentos modernos para um sorriso mais saudável.', photo: 'dental-smile' }],
@@ -443,7 +444,7 @@ const imoveis = simpleSegment(
   'Imobiliária especializada em venda e locação de casas e apartamentos, com assessoria completa de financiamento.',
   ['#1F2A2E', '#B08D57', '#E6D3B3', '#F7F3EC'],
   ['#Imoveis', '#CasaNova', '#Imobiliaria'],
-  ctaGeneric('Ver opções', ['Agende uma visita']),
+  ctaGeneric('Ver opções', ['Agende uma visita'], ['Agende uma visita', 'Fale com um corretor', 'Simule agora']),
   [
     { id: 'destaque', label: 'Imóvel em destaque', desc: 'Apresentação de imóvel', photo: 'interior', photos: ['interior', 'home-kitchen', 'home-keys'], cats: ['ia'], tag: 'Imóveis', objective: 'atrair', hashtags: ['#ImovelAVenda'],
       posts: [{ variant: 'icons', headline: 'O lugar certo para o seu próximo capítulo.', highlight: 'próximo capítulo.', icons: [{ icon: 'home', label: 'Casas' }, { icon: 'building', label: 'Apartamentos' }, { icon: 'trending', label: 'Investimento' }], photo: 'interior' }],
@@ -471,7 +472,7 @@ const pet = simpleSegment(
   'Pet shop com banho e tosa, consultas veterinárias e produtos selecionados para cães e gatos.',
   ['#2D2A6E', '#F2A541', '#FFD9A0', '#FFF8EE'],
   ['#PetShop', '#Pets', '#AmoMeuPet'],
-  ctaGeneric('Agende uma consulta', ['Agende o banho']),
+  ctaGeneric('Agende uma consulta', ['Agende o banho'], ['Agende o banho', 'Aproveite agora', 'Chame no direct']),
   [
     { id: 'cuidado', label: 'Cuidado em todas as fases', desc: 'Consultas e bem-estar', photo: 'pet-vet', photos: ['pet-vet', 'pet-grooming', 'pet-play'], cats: ['ia'], tag: 'Pet', objective: 'atrair', hashtags: ['#Veterinario'],
       posts: [{ variant: 'photo', headline: 'Cuidado e carinho em todas as fases.', highlight: 'todas as fases.', sub: 'Do filhote ao sênior.', photo: 'pet-vet' }],
@@ -499,7 +500,7 @@ const servicos = simpleSegment(
   'Consultoria para pequenos negócios em gestão, finanças e marketing, com diagnóstico e acompanhamento mensal.',
   ['#0B1F1A', '#12B386', '#FFD34D', '#F3F7F6'],
   ['#Empreendedorismo', '#Gestao', '#PequenosNegocios'],
-  ctaGeneric('Fale com um consultor', ['Agende um diagnóstico']),
+  ctaGeneric('Fale com um consultor', ['Agende um diagnóstico'], ['Agende uma conversa', 'Solicite um diagnóstico', 'Fale conosco']),
   [
     { id: 'produtividade', label: 'Dica de gestão', desc: 'Organização e produtividade', photo: 'laptop', photos: ['laptop', 'office-tools', 'office-team'], cats: ['ia', 'edu'], tag: 'Dica de gestão', objective: 'educar', hashtags: ['#Produtividade'],
       posts: [{ variant: 'photo', headline: 'Organize o seu tempo e aumente sua produtividade.', highlight: 'sua produtividade.', sub: 'Pequenas mudanças na rotina podem gerar grandes resultados.', photo: 'laptop' }],
@@ -527,7 +528,7 @@ const moda = simpleSegment(
   'Loja de roupas femininas com peças exclusivas, atendimento personalizado e envio para todo o Brasil.',
   ['#1C1C1C', '#D96C75', '#F2C4C4', '#FAF5F0'],
   ['#Moda', '#LookDoDia', '#ModaFeminina'],
-  ctaGeneric('Conheça a coleção', ['Compre pelo direct']),
+  ctaGeneric('Conheça a coleção', ['Compre pelo direct'], ['Garanta a sua peça', 'Aproveite agora', 'Compre pelo direct']),
   [
     { id: 'colecao', label: 'Nova coleção', desc: 'Lançamento', photo: 'fashion-rack', photos: ['fashion-rack', 'fashion-store', 'fashion-look'], cats: ['ia'], tag: 'Nova coleção', objective: 'atrair', hashtags: ['#NovaColecao'],
       posts: [{ variant: 'photo', headline: 'Nova coleção: leveza para todos os dias.', highlight: 'todos os dias.', sub: 'Peças exclusivas, tiragem limitada.', photo: 'fashion-rack' }],
@@ -727,4 +728,18 @@ export const PLANS: PlanDef[] = [
   },
 ]
 
-export const planDef = (id: PlanId) => PLANS.find((p) => p.id === id)!
+/** The plan of accounts without a paid subscription. Kept out of PLANS so the pricing grids only list what can be bought. */
+export const FREE_PLAN: PlanDef = {
+  id: 'free',
+  name: 'Grátis',
+  price: 0,
+  tagline: 'Para conhecer o MidFlow',
+  contents: 5,
+  profiles: 1,
+  variations: 1,
+  features: ['5 conteúdos por mês (1 pacote completo)', 'Textos e imagens com IA', 'Posts de feed e sequências de Stories', '1 perfil de negócio', 'Sem cartão de crédito'],
+}
+
+export const ALL_PLANS: PlanDef[] = [FREE_PLAN, ...PLANS]
+
+export const planDef = (id: PlanId): PlanDef => ALL_PLANS.find((p) => p.id === id) ?? FREE_PLAN

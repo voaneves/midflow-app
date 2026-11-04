@@ -49,7 +49,7 @@ const routes: RouteObject[] = [
   },
   // dev-only: every style × every creative, for visual QA
   ...(import.meta.env.DEV ? [{ path: '/dev/galeria', lazy: () => import('./dev/Gallery').then((m) => ({ Component: m.default })) }] : []),
-  { path: '*', element: <Navigate to="/" replace /> },
+  { path: '*', lazy: () => import('./pages/NotFound').then((m) => ({ Component: m.NotFound })) },
 ]
 
 // The single-file build runs inside a sandboxed frame where URL changes may be blocked → in-memory routing.

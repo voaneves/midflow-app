@@ -94,7 +94,7 @@ function PlanCard({ dark, onNavigate, compact }: { dark?: boolean; onNavigate?: 
         onClick={onNavigate}
         className={cx('mt-3 flex h-10 items-center justify-center rounded-xl text-sm font-semibold transition', dark ? 'bg-white text-ink hover:bg-brand-50' : 'border border-line bg-white text-ink hover:bg-brand-50')}
       >
-        Ver planos
+        {plan === 'free' ? 'Assinar um plano' : 'Ver planos'}
       </Link>
     </div>
   )
@@ -406,7 +406,7 @@ export function AppLayout() {
           e.preventDefault()
           document.getElementById('main')?.focus()
         }}
-        className="sr-only z-[90] rounded-xl bg-ink px-4 py-3 font-semibold text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+        className="sr-only z-[90] rounded-xl bg-ink px-4 py-3 font-semibold text-white focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:inline-flex focus:min-h-11 focus:items-center"
       >
         Pular para o conteúdo
       </a>

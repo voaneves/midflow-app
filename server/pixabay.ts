@@ -34,11 +34,16 @@ const SEGMENT_QUERY: Record<string, string> = {
  * Pixabay matches every word, so a few words find far more photos than a full sentence.
  */
 export function stockQuery(prompt: string | undefined, segment = 'beleza'): string {
-  const subject = (prompt || '').split(/\.\s*Style:/i)[0].split(/[.!?;\n]/)[0]
+  // First clause only: "fresh artisan bread loaves on a rustic counter, warm light" -> "fresh artisan bread loaves".
+  const subject = (prompt || '').split(/\.\s*Style:/i)[0].split(/[.!?;,\n]/)[0]
   const words = subject
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 1 && !/^(a|an|the|of|in|on|with|and|for|at|to|by|photo|photograph|image|picture|realistic|professional)$/i.test(w))
+    .filter(
+      (w) =>
+        w.length > 1 &&
+        !/^(a|an|the|of|in|on|with|and|for|at|to|by|photo|photograph|photography|image|picture|realistic|professional|gourmet|luxury|vertical|close|up)$/i.test(w),
+    )
     .slice(0, 4)
   return words.length >= 2 ? words.join(' ') : SEGMENT_QUERY[segment] || SEGMENT_QUERY.outro
 }

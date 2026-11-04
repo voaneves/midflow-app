@@ -64,12 +64,14 @@ test.describe('@backend', () => {
   })
 
   test('shows a plan-limit message with a link to Planos on 402', async ({ page }) => {
-    await page.route('**/api/generate', (route) => route.fulfill({ status: 402, json: { error: 'Você usou os 20 conteúdos do plano start neste mês.', code: 'quota_exceeded' } }))
+    const message = 'Você já usou os 5 conteúdos grátis deste mês. Assine um plano para continuar criando. Seus conteúdos grátis renovam no dia 1º.'
+    await page.route('**/api/generate', (route) => route.fulfill({ status: 402, json: { error: message, code: 'quota_exceeded', plan: 'free', limit: 5, used: 5 } }))
     await enterDemo(page)
     await toStep4(page)
-    await expect(page.getByText('Você usou os 20 conteúdos do plano start neste mês.')).toBeVisible()
+    await expect(page.getByText(message)).toBeVisible()
+    // The demo account is on Pro, so the link says "Ver planos"; a free account would read "Assinar um plano".
     await page.locator('#main').getByRole('link', { name: 'Ver planos' }).click()
-    await expect(page).toHaveURL(/#\/app\/planos/)
+    await expect(page).toHaveURL(/#\/app\/planos(\?motivo=limite)?$/)
   })
 
   test('review dialog: sends text-only payload, handles 429, confirms with a toast', async ({ page }) => {

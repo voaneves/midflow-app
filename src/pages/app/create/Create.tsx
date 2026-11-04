@@ -32,16 +32,16 @@ export function Stepper({ step }: { step: number }) {
           {STEPS.map((s) => (
             <li key={s.n}>
               {reachable(s.n) && s.n !== step ? (
-                <Link to={`/app/criar/${s.n}`} className="block py-2" aria-label={`Etapa ${s.n}: ${s.title}${isDone(s.n) ? ' (concluída)' : ''}`}>
-                  <span className={cx('block h-1.5 rounded-full', s.n <= step || isDone(s.n) ? 'bg-brand-600' : 'bg-slate-200')} />
+                <Link to={`/app/criar/${s.n}`} className="flex min-h-11 items-center" aria-label={`Etapa ${s.n}: ${s.title}${isDone(s.n) ? ' (concluída)' : ''}`}>
+                  <span className={cx('block h-1.5 w-full rounded-full', s.n <= step || isDone(s.n) ? 'bg-brand-600' : 'bg-slate-200')} />
                 </Link>
               ) : (
-                <span className="block py-2" aria-current={s.n === step ? 'step' : undefined}>
+                <span className="flex min-h-11 items-center" aria-current={s.n === step ? 'step' : undefined}>
                   <span className="sr-only">
                     Etapa {s.n}: {s.title}
                     {s.n === step ? ' (atual)' : ' (bloqueada)'}
                   </span>
-                  <span aria-hidden className={cx('block h-1.5 rounded-full', s.n < step ? 'bg-brand-600' : s.n === step ? 'bg-brand-400' : 'bg-slate-200')} />
+                  <span aria-hidden className={cx('block h-1.5 w-full rounded-full', s.n < step ? 'bg-brand-600' : s.n === step ? 'bg-brand-400' : 'bg-slate-200')} />
                 </span>
               )}
             </li>

@@ -162,7 +162,8 @@ interface State {
   /** Re-reads plan and usage from the backend (after a Stripe checkout). No-op without an account. */
   refreshPlan: () => Promise<void>
   /** Adopts a session created outside the forms (Google sign-in return). No-op when that user is already signed in. */
-  adoptSession: (session: AuthSession) => Promise<void>
+  /** Resolves true when the first sign-in created the business from defaults (no company in the profile), so the person still has to describe it. */
+  adoptSession: (session: AuthSession) => Promise<boolean>
   loadDemo: () => void
   signup: (u: User, company: string, segment: SegmentId) => void
   setBrand: (b: Partial<Brand>) => void
@@ -269,7 +270,7 @@ function seedLibrary(brand: Brand): LibraryItem[] {
   return [...g.posts.slice(0, 3), g.stories[0]].map((c, i) => ({
     id: uid('lib'),
     savedAt: now - (i + 1) * 86_400_000,
-    creative: c,
+    creative: { ...c, brand: { name: brand.name, handle: brand.handle } },
     style: look.style,
     palette: look.palette,
     postFormat: '4:5' as const,
@@ -387,17 +388,21 @@ export const useApp = create<State>()(
       },
       adoptSession: async ({ user }) => {
         const remote = isSupabaseConfigured()
-        if (remote && get().user?.id === user.id) return
+        if (remote && get().user?.id === user.id) return false
         set({ user: { name: user.name, email: user.email, ...(remote ? { id: user.id } : {}) } })
+        let needsBusiness = false
         if (remote && sync) {
           await sync.hydrate(user.id)
           // First sign-in after e-mail confirmation: nothing saved yet, so create the business from sign-up data.
           if (get().brands.every((b) => b.id === DEMO_BRAND.id)) {
-            get().signup({ name: user.name, email: user.email }, user.company || 'Minha empresa', user.segment || 'outro')
+            // Google sign-ups carry no company or segment: use the person's name as a placeholder and send them to "Marca" to fill it in.
+            needsBusiness = !user.company
+            get().signup({ name: user.name, email: user.email }, user.company || user.name || 'Minha empresa', user.segment || 'outro')
             set((s) => ({ user: s.user && { ...s.user, id: user.id } }))
             await sync.flush()
           }
         }
+        return needsBusiness
       },
       authSignUp: async ({ name, email, password }, company, segment) => {
         const { auth } = await getBackend()
@@ -449,7 +454,7 @@ export const useApp = create<State>()(
           activeGenId: null,
           library: [],
           scheduledPosts: [],
-          plan: 'start',
+          plan: 'free',
           used: 0,
         })
       },
@@ -779,8 +784,8 @@ if (sync) {
       void useApp
         .getState()
         .adoptSession(session)
-        .then(() => {
-          window.location.hash = '#/app'
+        .then((needsBusiness) => {
+          window.location.hash = needsBusiness ? '#/app/marca' : '#/app'
         })
     }),
   )

@@ -1,13 +1,13 @@
 import { ArrowLeft, ArrowRight, Lock, MailCheck, Mail, Sparkles, Store, User } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Creative } from '../components/creative/Creative'
 import { Button, Checkbox, FieldError, Input, Label, Logo, PasswordInput, Select } from '../components/ui'
 import { getBackend, isSupabaseConfigured } from '../lib/backend'
 import { derivePalette } from '../lib/color'
 import { SEGMENT_OPTIONS, segmentDef } from '../lib/data'
 import { generate } from '../lib/generator'
-import { markOAuthPending } from '../lib/oauthReturn'
+import { clearOAuthPending, markOAuthPending } from '../lib/oauthReturn'
 import { useApp } from '../lib/store'
 import type { PlanId, SegmentId } from '../lib/types'
 
@@ -43,6 +43,23 @@ function Visual() {
   )
 }
 
+type Field = 'name' | 'company' | 'segment' | 'email' | 'pass'
+type FieldErrors = Partial<Record<Field, string>>
+
+/** Fields in page order: the first invalid one gets the focus. */
+const FIELD_ORDER: Field[] = ['name', 'company', 'segment', 'email', 'pass']
+const FIELD_ID: Record<Field, string> = { name: 'su-name', company: 'su-company', segment: 'su-seg', email: 'au-email', pass: 'au-pass' }
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const MIN_PASSWORD = 6 // same minimum as the server message in lib/backend/supabase.ts
+
+/** What the login screen says when the provider sends the person back with an error (code set in lib/backend/supabase.ts). */
+const RETURN_ERRORS: Record<string, string> = {
+  off: 'Login com Google indisponível no momento. Entre com e-mail e senha.',
+  cancel: 'Login com Google cancelado. Você pode tentar de novo ou entrar com e-mail e senha.',
+  expired: 'O link expirou. Peça um novo link e tente de novo.',
+  fail: 'Não foi possível concluir o login. Tente novamente ou entre com e-mail e senha.',
+}
+
 export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
   const nav = useNavigate()
   const loc = useLocation() as { state?: { company?: string; plan?: PlanId; from?: string } }
@@ -60,19 +77,73 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
   const [consentError, setConsentError] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [params, setParams] = useSearchParams()
+  const [googleError, setGoogleError] = useState(() => RETURN_ERRORS[params.get('erro') ?? ''] ?? '')
+  // null = still checking. Only a confirmed "off" disables the button (an unreachable check must not block anyone).
+  const [googleOn, setGoogleOn] = useState<boolean | null>(null)
   const remote = isSupabaseConfigured()
+  // Chose a paid plan on the landing page: with a real backend the plan only exists after checkout, so send the person to the plans page.
+  const wantsPaidPlan = remote && !!loc.state?.plan && loc.state.plan !== 'free'
+  const showGoogle = remote && mode !== 'forgot'
+
+  useEffect(() => {
+    // Coming back from a failed provider redirect: show the reason once, then clean it from the address.
+    if (params.has('erro')) setParams({}, { replace: true })
+    // A flag left by an abandoned Google attempt must not sign in a later, unrelated session.
+    clearOAuthPending()
+  }, [params, setParams])
+
+  useEffect(() => {
+    if (!showGoogle) return
+    let alive = true
+    void getBackend()
+      .then((b) => b.auth.providerEnabled?.('google') ?? true)
+      .then((on) => alive && setGoogleOn(on))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [showGoogle])
 
   // Password recovery needs a real account provider; the browser-only version has no passwords to reset.
   if (mode === 'forgot' && !remote) return <Navigate to="/entrar" replace />
 
+  /** Inline pt-BR messages instead of the browser's own bubbles (which follow the browser language, not ours). */
+  const validate = (): FieldErrors => {
+    const errs: FieldErrors = {}
+    if (mode === 'signup') {
+      if (!name.trim()) errs.name = 'Digite seu nome.'
+      if (!company.trim()) errs.company = 'Digite o nome da empresa.'
+      if (!segment) errs.segment = 'Escolha o segmento do seu negócio.'
+    }
+    const mail = email.trim()
+    if (!mail) errs.email = 'Digite seu e-mail.'
+    else if (!EMAIL_RE.test(mail)) errs.email = 'Digite um e-mail válido, como voce@empresa.com.br.'
+    if (mode !== 'forgot') {
+      if (!pass) errs.pass = 'Digite sua senha.'
+      else if (pass.length < MIN_PASSWORD) errs.pass = 'A senha precisa ter pelo menos 6 caracteres.'
+    }
+    return errs
+  }
+
+  /** Clears one field's message as soon as the person edits it. */
+  const edited = (f: Field) => setFieldErrors((cur) => (cur[f] ? { ...cur, [f]: undefined } : cur))
+  const a11y = (f: Field) => ({ 'aria-invalid': fieldErrors[f] ? (true as const) : undefined, 'aria-describedby': fieldErrors[f] ? `${FIELD_ID[f]}-err` : undefined })
+  const fieldError = (f: Field) => (fieldErrors[f] ? <FieldError id={`${FIELD_ID[f]}-err`}>{fieldErrors[f]}</FieldError> : null)
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (mode === 'signup' && !consent) {
-      setConsentError('Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.')
-      document.getElementById('su-consent')?.focus()
+    const errs = validate()
+    const firstBad = FIELD_ORDER.find((f) => errs[f])
+    const noConsent = mode === 'signup' && !consent
+    setFieldErrors(errs)
+    setConsentError(noConsent ? 'Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.' : '')
+    if (firstBad || noConsent) {
+      setError('')
+      document.getElementById(firstBad ? FIELD_ID[firstBad] : 'su-consent')?.focus()
       return
     }
-    setConsentError('')
     setError('')
     setNotice('')
     setBusy(true)
@@ -88,11 +159,11 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
         if (res.needsConfirmation) return setNotice('Enviamos um link de confirmação para o seu e-mail. Confirme e depois entre.')
         // Local accounts have no billing: the chosen plan is only a simulation. With a backend the plan comes from the subscription.
         if (loc.state?.plan && !remote) setPlan(loc.state.plan)
-        nav('/app/criar/1')
+        nav(wantsPaidPlan ? '/app/planos' : '/app/criar/1')
       } else {
         const res = await authSignIn(email.trim(), pass)
         if (!res.ok) return setError(res.error)
-        nav(loc.state?.from ?? '/app')
+        nav(loc.state?.from ?? (wantsPaidPlan ? '/app/planos' : '/app'))
       }
     } catch {
       setError('Não foi possível concluir agora. Tente novamente em instantes.')
@@ -104,12 +175,18 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
   const google = async () => {
     setError('')
     setNotice('')
+    setGoogleError('')
     markOAuthPending()
     try {
       const res = await (await getBackend()).auth.signInWithOAuth('google')
-      if (!res.ok) setError(res.error)
+      if (!res.ok) {
+        clearOAuthPending()
+        setGoogleError(res.error)
+        if (res.error === RETURN_ERRORS.off) setGoogleOn(false)
+      }
     } catch {
-      setError('Não foi possível abrir o login com Google agora.')
+      clearOAuthPending()
+      setGoogleError('Não foi possível abrir o login com Google agora.')
     }
   }
 
@@ -137,9 +214,9 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
                 : 'Entre para continuar criando conteúdo para o seu negócio.'}
           </p>
 
-          {remote && mode !== 'forgot' && (
+          {showGoogle && (
             <>
-            <Button variant="secondary" className="mt-8 w-full" onClick={google} type="button">
+            <Button variant="secondary" className="mt-8 w-full" onClick={google} type="button" disabled={googleOn === false} aria-describedby="google-note">
               <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
                 <path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z" />
                 <path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1V17A11 11 0 0 0 12 23z" />
@@ -148,32 +225,52 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
               </svg>
               Continuar com Google
             </Button>
+            {googleOn === false ? (
+              <p id="google-note" className="mt-2 text-center text-xs text-slate-600">
+                Login com Google indisponível no momento. Use seu e-mail e senha.
+              </p>
+            ) : (
+              <p id="google-note" className="mt-2 text-center text-xs text-slate-600">
+                Ao continuar com o Google, você concorda com os{' '}
+                <Link to="/termos" target="_blank" rel="noopener" className="font-semibold text-brand-700 underline">
+                  Termos de Uso
+                </Link>{' '}
+                e a{' '}
+                <Link to="/privacidade" target="_blank" rel="noopener" className="font-semibold text-brand-700 underline">
+                  Política de Privacidade
+                </Link>
+                .
+              </p>
+            )}
+            <div role="alert">{googleError && <FieldError>{googleError}</FieldError>}</div>
             <div className="my-6 flex items-center gap-3 text-xs text-slate-500">
               <span className="h-px flex-1 bg-line" /> ou com e-mail <span className="h-px flex-1 bg-line" />
             </div>
             </>
           )}
-          <form onSubmit={submit} className={remote && mode !== 'forgot' ? 'grid gap-4' : 'mt-8 grid gap-4'}>
+          <form onSubmit={submit} noValidate className={showGoogle ? 'grid gap-4' : 'mt-8 grid gap-4'}>
             {mode === 'signup' && (
               <>
                 <div>
                   <Label htmlFor="su-name" required>
                     Seu nome
                   </Label>
-                  <Input id="su-name" required value={name} onChange={(e) => setName(e.target.value)} icon={<User className="size-4" />} placeholder="Como podemos te chamar?" />
+                  <Input id="su-name" required autoComplete="name" value={name} onChange={(e) => (setName(e.target.value), edited('name'))} {...a11y('name')} icon={<User className="size-4" />} placeholder="Como podemos te chamar?" />
+                  {fieldError('name')}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <Label htmlFor="su-company" required>
                       Empresa
                     </Label>
-                    <Input id="su-company" required value={company} onChange={(e) => setCompany(e.target.value)} icon={<Store className="size-4" />} placeholder="Nome do negócio" />
+                    <Input id="su-company" required autoComplete="organization" value={company} onChange={(e) => (setCompany(e.target.value), edited('company'))} {...a11y('company')} icon={<Store className="size-4" />} placeholder="Nome do negócio" />
+                    {fieldError('company')}
                   </div>
                   <div>
                     <Label htmlFor="su-seg" required>
                       Segmento
                     </Label>
-                    <Select id="su-seg" required value={segment} onChange={(e) => setSegment(e.target.value as SegmentId)}>
+                    <Select id="su-seg" required value={segment} onChange={(e) => (setSegment(e.target.value as SegmentId), edited('segment'))} {...a11y('segment')}>
                       <option value="">Selecione</option>
                       {SEGMENT_OPTIONS.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -181,6 +278,7 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
                         </option>
                       ))}
                     </Select>
+                    {fieldError('segment')}
                   </div>
                 </div>
               </>
@@ -189,7 +287,8 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
               <Label htmlFor="au-email" required>
                 E-mail
               </Label>
-              <Input id="au-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} icon={<Mail className="size-4" />} placeholder="voce@empresa.com.br" />
+              <Input id="au-email" type="email" required autoComplete={mode === 'forgot' ? 'email' : 'username'} value={email} onChange={(e) => (setEmail(e.target.value), edited('email'))} {...a11y('email')} icon={<Mail className="size-4" />} placeholder="voce@empresa.com.br" />
+              {fieldError('email')}
             </div>
             {mode !== 'forgot' && (
               <div>
@@ -202,10 +301,12 @@ export function Auth({ mode }: { mode: 'login' | 'signup' | 'forgot' }) {
                   minLength={6}
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   value={pass}
-                  onChange={(e) => setPass(e.target.value)}
+                  onChange={(e) => (setPass(e.target.value), edited('pass'))}
+                  {...a11y('pass')}
                   icon={<Lock className="size-4" />}
                   placeholder="Mínimo de 6 caracteres"
                 />
+                {fieldError('pass')}
                 {mode === 'login' && remote && (
                   <div className="mt-1 flex justify-end">
                     <Link to="/esqueci-senha" className="-mr-2 inline-flex min-h-11 items-center px-2 text-sm font-semibold text-brand-700 hover:underline">

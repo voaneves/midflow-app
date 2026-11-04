@@ -340,7 +340,7 @@ Depois do deploy, confira nesta ordem:
 1. `https://voaneves.com/midflow-app/api/status` responde `aiEnabled: true`.
 2. Cadastro com e-mail real: chega a confirmação em pt-BR, e o link volta para o app.
 3. Login, recuperação de senha e entrada com Google.
-4. Uma geração com conta: o contador de conteúdos do plano diminui.
+4. Uma geração com conta nova: a conta mostra "Plano Grátis" com 0/5 conteúdos e, depois da geração, 5/5.
 5. Checkout em modo de teste, com webhook `200` no Stripe e plano atualizado na tela de Planos.
 6. Pedido de revisão, que aparece no painel `#/painel` e em "Minhas revisões".
 7. Exclusão de uma conta de teste (§11.8).
@@ -481,14 +481,15 @@ Quando o modelo falha, o cliente vê o resultado padrão, rotulado como tal. Nã
 
 | Plano | Preço | Conteúdos por mês | Perfis de negócio | Variações por peça |
 |---|---|---|---|---|
+| Grátis | R$ 0 | 5 | 1 | 1 |
 | Start | R$ 47 | 20 | 1 | 1 |
 | Pro | R$ 77 | 60 | 2 | 2 |
 | Business | R$ 127 | 150 | 5 | 4 |
 
 - **Custo:** uma geração completa (4 posts e 4 stories) consome **5** unidades (4 posts + 1 sequência de Stories). Reescritas e imagens do editor não consomem cota; só checam se ainda há saldo.
 - **Reserva antes do custo:** a unidade é reservada no banco antes da chamada paga, de forma atômica. Ao entregar, o servidor ajusta a diferença. Resultados em falha transitória não são cobrados.
-- **Estouro:** resposta `402` com `code: "quota_exceeded"`, e a tela oferece o upgrade.
-- **Sem assinatura ativa** (`active`, `trialing` ou `past_due`), a conta usa o limite do Start.
+- **Estouro:** resposta `402` com `code: "quota_exceeded"`, e a tela oferece o upgrade. No plano Grátis a mensagem diz que os conteúdos grátis acabaram e renovam no dia 1º, e o botão leva a `/app/planos?motivo=limite`, que mostra um aviso no topo da tela de Planos.
+- **Sem assinatura ativa** (`active`, `trialing` ou `past_due`), a conta usa o plano Grátis (5 conteúdos/mês, um pacote completo). O plano Grátis não é gravado em `subscriptions`.
 - O contador mensal segue o calendário (UTC). Se o Supabase estiver fora do ar, a cota é ignorada (aberto) e um aviso é registrado.
 
 ### 11.5 Acesso sem login e "Ver demonstração" (`ANON_AI`)
@@ -555,7 +556,7 @@ Antes do lançamento, confirme que nenhum campo pendente aparece nas páginas pu
 
 ## Behaviour notes
 
-- Uma assinatura que não está em `active`, `trialing` ou `past_due` usa o limite do Start (`effectivePlan`), igual a uma conta nova.
+- Uma assinatura que não está em `active`, `trialing` ou `past_due` usa o plano Grátis (`effectivePlan`), igual a uma conta nova.
 - O webhook do Stripe é idempotente em três pontos: ids de evento são reservados em `stripe_events` (marcados ao concluir; reserva ainda em andamento responde `503` para o Stripe tentar de novo; reservas não concluídas com mais de 5 minutos são reprocessadas), a escrita da assinatura é um upsert por usuário, e `apply_subscription_event` ignora eventos com `created` mais antigo que `last_event_at`.
 - O plano vem do ID do preço Stripe (`STRIPE_PRICE_*`) e só usa `metadata.plan` quando o preço não é reconhecido, porque metadados podem ser editados no painel do Stripe.
 - Depois do Checkout, a tela de Planos volta com `?checkout=success` e relê plano e uso algumas vezes enquanto o webhook chega.

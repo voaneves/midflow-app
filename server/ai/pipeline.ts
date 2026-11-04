@@ -3,7 +3,7 @@
  * Falls back to the template engine only when the model is unavailable, and says so (engine: 'template').
  */
 import { config } from '../config.ts'
-import { synthesizeAIContent, THEME_LABELS_MAP } from '../aiService.ts'
+import { synthesizeAIContent, themeLabelOf } from '../aiService.ts'
 import { callLLM } from './llm.ts'
 import { buildRepairPrompt, buildSystemPrompt, buildUserPrompt, PACK_SCHEMA } from './prompt.ts'
 import { openIssues, reviewPack } from './quality.ts'
@@ -28,7 +28,7 @@ export type ModelCaller = typeof callLLM
 export function themeLabelFor(p: GenerateParams): string {
   return (
     p.customTheme?.trim() ||
-    (p.themeId && THEME_LABELS_MAP[p.themeId]) ||
+    themeLabelOf(p.segment, p.themeId) ||
     p.topics?.split(/[,.;\n]/)[0]?.trim() ||
     'Destaques da semana'
   )

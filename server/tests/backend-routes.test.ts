@@ -313,6 +313,7 @@ test('generate / rewrite: an invalid or expired Bearer token is a 401', async ()
 
 test('generate: over the plan allowance answers 402 quota_exceeded without calling the AI', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (no row = free plan, see quota-free.test.ts)
   config.ai.provider = 'gemini'
   config.ai.geminiKey = 'test-key'
   be.tables.usage_counters.push({ user_id: ids.customer, period: new Date().toISOString().slice(0, 7), used: 18 }) // start plan = 20; a full run costs 5
@@ -329,6 +330,7 @@ test('generate: over the plan allowance answers 402 quota_exceeded without calli
 
 test('generate: an AI-delivered result is counted against the account and reported back', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (no row = free plan, see quota-free.test.ts)
   config.ai.provider = 'gemini'
   config.ai.geminiKey = 'test-key'
   globalThis.fetch = fakeGeminiFetch(be.fetch, generateBody.params)
@@ -349,6 +351,7 @@ test('generate: an AI-delivered result is counted against the account and report
 
 test('generate: a template result is never charged, whatever the reason (not configured, daily cap, transient)', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (no row = free plan, see quota-free.test.ts)
   const token = await tokenFor(ids.customer)
   const sum = () => be.tables.usage_counters.reduce((n, row) => n + row.used, 0)
 
@@ -432,6 +435,7 @@ test('AI failure contract: provider rate limit is transient, invalid key is conf
 
 test('AI failure contract: a transient failure is not charged to the account (the client retries)', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (no row = free plan, see quota-free.test.ts)
   config.ai.provider = 'gemini'
   config.ai.geminiKey = 'test-key'
   const r = await call('POST', '/api/generate', { body: generateBody, token: await tokenFor(ids.customer) })

@@ -22,7 +22,10 @@ export type ToneId =
 export type ObjectiveId = 'atrair' | 'promocao' | 'educar' | 'marca' | 'outro'
 export type ImageType = 'fotos' | 'ilustracoes' | 'render' | 'misto'
 export type PostFormat = '1:1' | '4:5'
-export type PlanId = 'start' | 'pro' | 'business'
+/** 'free' is the plan of accounts without a paid subscription; it is never stored in the database. */
+export type PlanId = 'free' | 'start' | 'pro' | 'business'
+/** Plans that can be bought through checkout. */
+export type PaidPlanId = Exclude<PlanId, 'free'>
 
 export type Variant = 'photo' | 'list' | 'icons' | 'beforeafter' | 'offer' | 'poll' | 'quote' | 'steps'
 
@@ -60,6 +63,8 @@ export interface Creative {
   /** per-creative overrides from the editor */
   style?: StyleId
   palette?: Palette
+  /** brand mark this creative keeps regardless of the live brand (demo seed items) */
+  brand?: { name: string; handle: string }
 }
 
 export interface Brand {

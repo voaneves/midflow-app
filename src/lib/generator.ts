@@ -4,9 +4,9 @@
  * e produz posts harmônicos complementares (Capa/Destaque -> Benefícios/Lista -> Prova/Antes-e-Depois -> Oferta/Agendamento)
  * além de sequências de Stories narrativos (Gancho -> Necessidade -> Prova -> CTA).
  */
-import { rewriteCopyLocally } from './aiService'
 import { segmentDef, type PostSeed, type SegmentDef, type ThemeCat, type ThemeDef } from './data'
 import { pickDistinctPhotos } from './photos'
+import { voiceKeyFor, type VoiceKey } from '../../server/voiceKey.ts'
 import type { Creative, GenParams, Generation, ObjectiveId, SegmentId, ToneId } from './types'
 
 export function rng(seed: number) {
@@ -70,10 +70,78 @@ export function findTheme(segment: SegmentId | '' | undefined, themeId: string |
   return segmentDef(segment || 'outro').themes.find((t) => t.id === themeId)
 }
 
+/**
+ * Copy of the custom-theme posts and story that depends on the kind of business, so a bakery never gets "agende seu horário" or "protocolos".
+ * Segment detection is shared with the server (server/voiceKey.ts); "beleza" keeps the original wording.
+ */
+const CUSTOM_COPY: Record<VoiceKey, { cta: string; offerSub: string; iconsSub: string; bullets: string[] }> = {
+  beleza: {
+    cta: 'Quer saber mais e agendar seu horário?',
+    offerSub: 'Garanta seu horário e aproveite esta oportunidade.',
+    iconsSub: 'Protocolos sob medida para transformar sua experiência.',
+    bullets: ['Diagnóstico personalizado e individual', 'Resultado visível desde o primeiro momento', 'Equipe altamente especializada e qualificada'],
+  },
+  alimentacao: {
+    cta: 'Quer provar? Faça seu pedido.',
+    offerSub: 'Faça seu pedido e aproveite esta oportunidade.',
+    iconsSub: 'Ingredientes frescos e preparo caprichado em cada pedido.',
+    bullets: ['Ingredientes frescos e bem selecionados', 'Sabor de verdade desde a primeira garfada', 'Preparo caprichado, feito na hora'],
+  },
+  padaria: {
+    cta: 'Quer provar? Faça sua encomenda.',
+    offerSub: 'Faça sua encomenda e aproveite esta oportunidade.',
+    iconsSub: 'Fornadas fresquinhas e receitas da casa todos os dias.',
+    bullets: ['Fornadas fresquinhas ao longo do dia', 'Receitas da casa com ingredientes de qualidade', 'Encomendas sob medida para a sua ocasião'],
+  },
+  fitness: {
+    cta: 'Quer começar? Fale com a equipe.',
+    offerSub: 'Garanta sua matrícula e aproveite esta oportunidade.',
+    iconsSub: 'Treino sob medida para a sua evolução.',
+    bullets: ['Plano de treino ajustado ao seu objetivo', 'Acompanhamento próximo dos professores', 'Evolução que você percebe semana a semana'],
+  },
+  saude: {
+    cta: 'Quer saber mais? Agende sua consulta.',
+    offerSub: 'Agende sua avaliação e aproveite esta oportunidade.',
+    iconsSub: 'Cuidado individual para a sua saúde.',
+    bullets: ['Avaliação cuidadosa e individual', 'Orientação clara em cada etapa', 'Equipe especializada e acolhedora'],
+  },
+  imoveis: {
+    cta: 'Quer saber mais? Agende uma visita.',
+    offerSub: 'Agende uma visita e aproveite esta oportunidade.',
+    iconsSub: 'Assessoria completa do primeiro contato às chaves.',
+    bullets: ['Opções selecionadas para o seu perfil', 'Negociação clara e documentação conferida', 'Acompanhamento do início ao fim'],
+  },
+  pet: {
+    cta: 'Quer saber mais? Agende para o seu pet.',
+    offerSub: 'Agende o horário do seu pet e aproveite esta oportunidade.',
+    iconsSub: 'Cuidado carinhoso e seguro para o seu pet.',
+    bullets: ['Atendimento gentil, no ritmo do seu pet', 'Ambiente limpo e seguro', 'Equipe apaixonada por animais'],
+  },
+  servicos: {
+    cta: 'Quer conversar? Agende uma conversa.',
+    offerSub: 'Agende uma conversa e aproveite esta oportunidade.',
+    iconsSub: 'Método claro e entregas combinadas.',
+    bullets: ['Diagnóstico claro do seu cenário', 'Plano com metas e prazos combinados', 'Acompanhamento até o resultado'],
+  },
+  moda: {
+    cta: 'Quer ver mais? Chame a gente no Direct.',
+    offerSub: 'Garanta a sua peça e aproveite esta oportunidade.',
+    iconsSub: 'Peças selecionadas com estilo e qualidade.',
+    bullets: ['Peças selecionadas com curadoria', 'Modelagem e caimento que valorizam você', 'Looks para todas as ocasiões'],
+  },
+  generico: {
+    cta: 'Quer saber mais? Fale com a gente.',
+    offerSub: 'Fale com a gente e aproveite esta oportunidade.',
+    iconsSub: 'Cuidado e qualidade em cada detalhe.',
+    bullets: ['Atendimento próximo e personalizado', 'Qualidade que você percebe desde o início', 'Equipe preparada e atenciosa'],
+  },
+}
+
 export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
   const base = seg.themes[0]
   const clean = text.trim().replace(/\.$/, '')
   const title = clean.charAt(0).toUpperCase() + clean.slice(1)
+  const copy = CUSTOM_COPY[voiceKeyFor(seg.id, title)]
   const photos = pickDistinctPhotos(title, seg.id, 4, 11)
   return {
     ...base,
@@ -97,7 +165,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
         variant: 'list',
         headline: `${title}: por que vale a pena investir?`,
         highlight: 'vale a pena',
-        bullets: ['Diagnóstico personalizado e individual', 'Resultado visível desde o primeiro momento', 'Equipe altamente especializada e qualificada'],
+        bullets: copy.bullets,
         photo: photos[1],
       },
       {
@@ -109,7 +177,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
           { icon: 'heart', label: 'Cuidado único' },
           { icon: 'shield', label: 'Segurança total' },
         ],
-        sub: 'Protocolos sob medida para transformar sua experiência.',
+        sub: copy.iconsSub,
         photo: photos[2],
       },
       {
@@ -117,7 +185,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
         headline: `${title}: condições especiais nesta semana.`,
         highlight: 'condições especiais',
         price: { label: 'A partir de', value: '89', cents: '90' },
-        sub: 'Garanta seu horário e aproveite esta oportunidade.',
+        sub: copy.offerSub,
         photo: photos[3],
       },
     ],
@@ -129,7 +197,7 @@ export function customThemeDef(seg: SegmentDef, text: string): ThemeDef {
       solution: 'Nossa equipe preparou uma experiência completa e transparente.',
       solutionSub: 'Atendimento próximo, produtos de primeira linha e foco no seu bem-estar.',
       proof: 'list',
-      cta: 'Quer saber mais e agendar seu horário?',
+      cta: copy.cta,
       ctaSub: 'Envie uma mensagem pelo direct ou toque no link da bio!',
     },
   }
@@ -398,15 +466,4 @@ export function generate(p: GenParams, version = 1): Generation {
     stories,
     engine: 'synthesizer',
   }
-}
-
-/** Reescrever copy com IA ou modos contextuais */
-export function rewrite(
-  c: Creative,
-  _segment?: SegmentId,
-  seed?: number,
-  mode: 'vendedor' | 'curto' | 'sofisticado' | 'descontraido' | 'educativo' = 'vendedor',
-  brandName?: string,
-): Partial<Creative> {
-  return rewriteCopyLocally(c, mode, brandName, seed)
 }

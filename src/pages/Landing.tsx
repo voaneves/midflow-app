@@ -535,7 +535,7 @@ export function Landing() {
               <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-[44px] sm:leading-[1.08]">
                 Escolha o seu ritmo de conteúdo
               </h2>
-              <p className="mt-4 text-lg text-slate-600">Comece grátis. Mude ou cancele quando quiser sem multas.</p>
+              <p className="mt-4 text-lg text-slate-600">Comece grátis: 5 conteúdos por mês com IA, sem cartão. Mude ou cancele quando quiser, sem multa.</p>
             </Reveal>
             <div className="mt-12 grid gap-5 md:grid-cols-3">
               {PLANS.map((p, i) => (
@@ -576,6 +576,11 @@ export function Landing() {
                   </Button>
                 </Reveal>
               ))}
+            </div>
+            <div className="mt-8 flex justify-center">
+              <Button variant="secondary" size="lg" onClick={() => nav('/cadastro')}>
+                Criar conta grátis
+              </Button>
             </div>
           </div>
         </section>
@@ -681,7 +686,7 @@ export function Landing() {
       <footer className="border-t border-line px-4 py-10 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 sm:flex-row">
           <Logo className="text-lg" />
-          <span>© 2026 MIDFLOW · midflow.com.br · Todos os direitos reservados.</span>
+          <span>© 2026 MIDFLOW · voaneves.com/midflow-app · Todos os direitos reservados.</span>
           <span>Plataforma Inteligente de Conteúdo para Redes Sociais</span>
         </div>
         <nav aria-label="Documentos legais" className="mx-auto mt-6 flex max-w-6xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium sm:justify-end">

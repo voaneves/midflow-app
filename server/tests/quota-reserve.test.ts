@@ -8,6 +8,7 @@ const usedOf = (user: string) => be.tables.usage_counters.find((r) => r.user_id 
 
 test('parallel generations can never push usage past the plan limit', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   deliverAiPacks()
   const token = await tokenFor(ids.customer)
   be.tables.usage_counters.push({ user_id: ids.customer, period: period(), used: 12 }) // start plan = 20; one run costs 5 → room for exactly one
@@ -21,8 +22,9 @@ test('parallel generations can never push usage past the plan limit', async () =
   assert.deepEqual(ok[0].json.usage, { plan: 'start', used: 17, limit: 20 })
 })
 
-test('parallel generations from a fresh account stop at the limit (4 runs of 5 = 20)', async () => {
+test('parallel generations from a fresh Start subscriber stop at the limit (4 runs of 5 = 20)', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   deliverAiPacks()
   const token = await tokenFor(ids.customer)
   const results = await Promise.all(Array.from({ length: 10 }, () => call('POST', '/api/generate', { body: generateBody, token })))
@@ -33,6 +35,7 @@ test('parallel generations from a fresh account stop at the limit (4 runs of 5 =
 
 test('a reservation is refunded when the AI fails transiently (the client retries)', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   enableGemini() // the fake answers the provider call with a 599 → transient
   const r = await call('POST', '/api/generate', { body: generateBody, token: await tokenFor(ids.customer) })
   assert.equal(r.status, 200)
@@ -45,6 +48,7 @@ test('a reservation is refunded when the AI fails transiently (the client retrie
 
 test('a delivered result keeps its reservation and reports the usage', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   deliverAiPacks()
   const r = await call('POST', '/api/generate', { body: generateBody, token: await tokenFor(ids.customer) })
   assert.equal(r.status, 200)
@@ -57,6 +61,7 @@ test('a delivered result keeps its reservation and reports the usage', async () 
 
 test('over the limit: 402 and nothing is reserved or sent to the AI', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   enableGemini()
   be.tables.usage_counters.push({ user_id: ids.customer, period: period(), used: 18 })
   const r = await call('POST', '/api/generate', { body: generateBody, token: await tokenFor(ids.customer) })
@@ -68,6 +73,7 @@ test('over the limit: 402 and nothing is reserved or sent to the AI', async () =
 
 test('rewrites only check the allowance (they are not charged)', async () => {
   enableSupabase()
+  be.tables.subscriptions.push({ user_id: ids.customer, plan: 'start', status: 'active' }) // paid Start: 20/month (an account without a row is on the free plan, see quota-free.test.ts)
   const token = await tokenFor(ids.customer)
   const r = await call('POST', '/api/rewrite', { body: { creative: { headline: 'x' } }, token })
   assert.equal(r.status, 200)
