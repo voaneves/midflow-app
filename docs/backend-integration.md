@@ -32,7 +32,7 @@ Public (build time, GitHub Pages repository **variables**, not secrets; safe in 
 | Name | Example | Notes |
 |---|---|---|
 | `VITE_SUPABASE_URL` | `https://abcd.supabase.co` | |
-| `VITE_SUPABASE_ANON_KEY` | `eyJ...` | The anon key is public by design; Row Level Security protects data |
+| `VITE_SUPABASE_ANON_KEY` | `sb_publishable_...` (or legacy `eyJ...`) | The publishable (legacy: anon) key is public by design; Row Level Security protects data |
 | `VITE_BILLING_ENABLED` | `true` | Shows real checkout in Plans. Needs the two above and a signed-in account |
 
 Server only (Worker secrets via `wrangler secret put`, or `.env` for `npm start`). Never prefix with `VITE_`:
@@ -40,7 +40,7 @@ Server only (Worker secrets via `wrangler secret put`, or `.env` for `npm start`
 | Name | Purpose |
 |---|---|
 | `SUPABASE_URL` | Same project URL, used by `server/db/supabase.ts` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Writes subscriptions / usage; bypasses RLS |
+| `SUPABASE_SERVICE_ROLE_KEY` | Secret key (`sb_secret_...`, or legacy `service_role` `eyJ...`). Writes subscriptions / usage; bypasses RLS. Sent in both the `apikey` and `Authorization` headers, so either format works |
 | `SUPABASE_JWT_SECRET` | Optional. Only for projects still on the legacy HS256 secret. With asymmetric signing keys (ES256 / RS256) leave it unset: tokens are verified against `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` |
 | `TRUST_PROXY` | How to read the client IP for rate limits. `cloudflare` (Worker: only `CF-Connecting-IP`), a number N (the Nth entry from the right of `X-Forwarded-For`, N = proxies in front of the server), unset (socket address). `true` still works as 1 and logs a warning |
 | `STRIPE_SECRET_KEY` | `sk_live_...` / `sk_test_...` |
@@ -242,10 +242,10 @@ Nothing on the API enforces `profiles` per plan yet; `addBrand` in the client do
 ### Supabase
 
 1. Create a project (region near Brazil, `sa-east-1`).
-2. SQL editor: run `supabase/migrations/20261103000000_init.sql`, then `supabase/migrations/20261103010000_reviews_staff_ai_events.sql` (or `supabase db push` with the CLI).
+2. Apply all five migrations in `supabase/migrations/`, in order: `20261103000000_init.sql` (schema, RLS), `20261103010000_reviews_staff_ai_events.sql` (staff, reviews, AI events), `20261103020000_security_hardening.sql`, `20261103030000_usage_reservation.sql` (atomic quota reservation), `20261103040000_sync_limits.sql` (uncompressed size limits). Recommended: the Supabase CLI (`npx supabase login`, `link --project-ref <ref>`, `migration list --remote`, `db push --remote --dry-run`, `db push --remote`) rather than the SQL editor; versions pasted by hand earlier are marked with `npx supabase migration repair --remote --status applied <version>`. Use one mechanism only (CLI `db push` or the Supabase GitHub integration), not both. Keep **Automatically expose new tables** on when creating the project: the migrations rely on the default grants and only revoke from `anon`. `supabase/config.toml` is for local `supabase start` / `supabase test db`.
 3. Authentication → Providers: enable Email. Decide on "Confirm email" (default on; the app handles both).
 4. Authentication → URL configuration: Site URL `https://voaneves.com/midflow-app/`; add the same and `http://localhost:5173/` to Redirect URLs.
-5. Project Settings → API: copy the Project URL, the `anon` key (public) and the `service_role` key (secret).
+5. Project Settings → API: copy the Project URL, the publishable key (`sb_publishable_...`, legacy `anon`; public) and the secret key (`sb_secret_...`, legacy `service_role`; secret). Both formats work.
    - **JWT keys.** `server/auth.ts` verifies ES256 (EC P-256) and RS256 tokens against the project JWKS (`{SUPABASE_URL}/auth/v1/.well-known/jwks.json`, cached 10 minutes, refetched at most every 30 s when an unknown `kid` shows up, stale keys kept if Supabase is unreachable). That is what projects on Supabase's new asymmetric signing keys need: set `SUPABASE_URL` and **leave `SUPABASE_JWT_SECRET` unset**. Only set the legacy secret if the project still signs with it (HS256); it is never used to verify an ES256 / RS256 token, and HS256 tokens are refused outright when no secret is configured, so a public key cannot be replayed as an HMAC secret. Staff access needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, not the JWT secret.
 6. Optional: add custom SMTP and pt-BR e-mail templates (Authentication → Emails) so confirmation mails come from Midflow. Translate the **Reset Password** template too: it is the "Esqueci minha senha" mail, and its link must keep `{{ .ConfirmationURL }}`. The built-in mail service is rate limited (a few messages per hour); configure custom SMTP before launch.
 7. **First admin.** Sign up in the app with the owner e-mail, then run once in the SQL editor:
@@ -256,7 +256,7 @@ Nothing on the API enforces `profiles` per plan yet; `addBrand` in the client do
    ```
 
    Alternative without SQL: with `ADMIN_TOKEN` set, `POST /api/admin/staff` with `{ "email": "...", "role": "admin" }` and the token as Bearer. After that, admins add editors from the app (or the same endpoint).
-8. GitHub → Settings → Environments → `production` → Environment secrets (not repository secrets): `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`. Then Settings → Secrets and variables → Actions → Variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_BILLING_ENABLED`, `STRIPE_PRICE_*`, optionally `APP_URL`. Push to `main` to deploy. (`SUPABASE_JWT_SECRET` is only needed for legacy HS256 projects; `TRUST_PROXY` is set in `wrangler.jsonc`.)
+8. GitHub → Settings → Environments → `production` → Environment secrets (not repository secrets): `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (plus `SUPABASE_JWT_SECRET` only for a legacy HS256 project). Then Settings → Secrets and variables → Actions → Variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_BILLING_ENABLED`, `STRIPE_PRICE_*`, optionally `APP_URL`. Push to `main` to deploy. (`SUPABASE_JWT_SECRET` is only needed for legacy HS256 projects; `TRUST_PROXY` is set in `wrangler.jsonc`.)
 
 RLS summary for the review tables: `staff_members` (a user may read only their own row), `review_requests` (a customer may read only their own rows and only the columns `id, created_at, updated_at, user_id, status, brand_name, segment, comment, revised_outputs, resolved_at`), `review_events` and `ai_events` have no client access at all. Everything is read and written by the API with the service role.
 
@@ -268,7 +268,7 @@ RLS summary: users read and write only their own `brands`, `generations`, `libra
 2. Copy the price ids into `STRIPE_PRICE_*` (monthly) and `STRIPE_PRICE_*_ANNUAL`.
 3. Developers → Webhooks → add endpoint `https://voaneves.com/midflow-app/api/billing/webhook` listening to: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`. Copy the signing secret to `STRIPE_WEBHOOK_SECRET`.
 4. Use test mode first (`sk_test_...`, test price ids, test webhook secret) with `stripe listen --forward-to` for local checks.
-5. Settings → Billing → Customer portal: enable (cancel / change plan) for a later "Gerenciar assinatura" button. Card is the supported method for subscriptions; Pix and boleto recurring need a separate evaluation.
+5. Settings → Billing → Customer portal: enable (cancel / change plan); the "Gerenciar assinatura" button (Plans and Settings) opens it via `POST /api/billing/portal`. Card is the supported method for subscriptions; Pix and boleto recurring need a separate evaluation.
 6. Settings → Public details: business name and support e-mail shown on Checkout.
 
 ## Behaviour notes
@@ -281,7 +281,7 @@ RLS summary: users read and write only their own `brands`, `generations`, `libra
 - The API now enforces quotas for signed-in accounts (see Quota). The `used` counter in the UI is overwritten by `usage` from `/api/generate` and by `usage_counters` whenever the plan is refreshed.
 - Staff roles live in `staff_members`; the shared `ADMIN_TOKEN` is a break-glass admin only. Rotate it if it was ever shared.
 - E-mail lookup for staff uses `auth.users` through `find_confirmed_user_by_email`. `profiles.email` is only a convenience copy (kept in sync by the `on_auth_user_email_changed` trigger) and is no longer trusted for anything.
-- The Auth admin API is used only by `POST /api/account/delete` (service role key). Token verification still uses the JWT secret and staff lookup still reads `profiles` through PostgREST.
+- The Auth admin API is used only by `POST /api/account/delete` (service role key). Token verification uses the project JWKS (the JWT secret only for legacy HS256 projects) and staff lookup still reads `profiles` through PostgREST.
 
 ## Security hardening (migration `20261103020000_security_hardening.sql`)
 

@@ -57,7 +57,9 @@ export function createSupabaseAuth(cfg: SupabaseConfig): AuthProvider {
   return {
     kind: 'supabase',
     async signUp({ email, password, name, company, segment }): Promise<AuthResult> {
-      const { data, error } = await (await client()).auth.signUp({ email, password, options: { data: { name, company, segment } } })
+      // PKCE: the confirmation link returns to the app root with "?code=".
+      const emailRedirectTo = `${window.location.origin}${window.location.pathname}`
+      const { data, error } = await (await client()).auth.signUp({ email, password, options: { data: { name, company, segment }, emailRedirectTo } })
       if (error) return { ok: false, error: authErrorMessage(error.message) }
       const session = toSession(data.session)
       return { ok: true, session, needsConfirmation: !session }

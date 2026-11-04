@@ -19,7 +19,8 @@
 #   ADMIN_TOKEN            random string, at least 32 chars — break-glass admin access
 #   IMAGE_URL_SECRET       random string, at least 32 chars — signs AI image URLs (without it, cards use stock photos)
 #   PIXABAY_API_KEY        optional — stock photo fallback (pixabay.com/api/docs)
-#   SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET   optional — accounts, review queue, staff roles, quotas
+#   SUPABASE_SERVICE_ROLE_KEY                        optional — accounts, review queue, staff roles, quotas
+#   SUPABASE_JWT_SECRET                              optional — only for legacy HS256 projects (asymmetric keys / JWKS: leave unset)
 #   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET         optional — billing
 #
 # Repository Variables (Settings → Secrets and variables → Actions → Variables), all optional and not secret:
@@ -166,7 +167,7 @@ jobs:
           fi
 
   site:
-    needs: checks
+    needs: [checks, api]
     runs-on: ubuntu-24.04
     # Only this job can write to Pages and mint the OIDC token that deploy-pages needs.
     permissions:

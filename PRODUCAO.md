@@ -188,7 +188,7 @@ Para analisar em planilha: `server/data/events.jsonl` tem um evento JSON por lin
 | Login | Implementado: Supabase Auth com e-mail e senha, recuperação de senha e entrada com Google. Demonstração e acesso local continuam disponíveis | Configurar provedor, e-mails pt-BR e SMTP próprio (§9.2) e validar com conta real |
 | Dados entre dispositivos | Implementado: marcas, gerações e biblioteca sincronizadas com o Supabase quando configurado | Teste ponta a ponta com conta real em dois dispositivos |
 | Pagamento e limites de plano | Implementado: Stripe Checkout, webhook e cotas aplicadas no servidor (`402 quota_exceeded`) | Configurar produtos, preços e webhook (§9.3); testar em modo teste e depois ativar o modo real |
-| Troca de plano e cancelamento | Servidor pronto: `POST /api/billing/portal` abre o Customer Portal do Stripe (retorno em `/#/app/config`); assinante com plano ativo recebe `409` no checkout apontando para "Gerenciar assinatura" | Salvar uma vez a configuração do portal no Stripe (Settings, Billing, Customer portal) e testar em modo teste |
+| Troca de plano e cancelamento | Implementado: o botão "Gerenciar assinatura" (telas Planos e Configurações) chama `POST /api/billing/portal`, que abre o Customer Portal do Stripe (retorno em `/#/app/config`); assinante com plano ativo recebe `409` no checkout apontando para "Gerenciar assinatura" | Salvar uma vez a configuração do portal no Stripe (Settings, Billing, Customer portal) e testar em modo teste |
 | Limite de perfis por plano | Aplicado só no navegador (`addBrand`), não no servidor | Checar `profileLimit(plan)` em uma RPC ou rota |
 | Painel de equipe | Implementado: papéis admin e editor, fila de revisões, saúde da IA, métricas e gestão de equipe | Cadastrar o primeiro admin (§9.2, passo 9) |
 | Publicação no Instagram | Download + atalhos para o app | Meta Graph API (exige aprovação do app pela Meta) |
@@ -246,7 +246,7 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
    | `ADMIN_TOKEN` | Aleatório, **mínimo 32 caracteres** (chave de emergência do painel) |
    | `IMAGE_URL_SECRET` | Aleatório, **mínimo 32 caracteres**; sem ele as imagens de IA ficam desligadas |
    | `PIXABAY_API_KEY` | Opcional: pixabay.com/api/docs |
-   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (§9.2). Opcional até ativar contas |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (§9.2): chave `sb_secret_...` (projetos novos) ou `service_role` `eyJ...` (legada). Opcional até ativar contas |
    | `SUPABASE_JWT_SECRET` | **Só para projetos com chave legada HS256.** Projetos com chaves assimétricas não usam (§9.2, passo 3) |
    | `STRIPE_SECRET_KEY` | Stripe → Developers → API keys (§9.3). Comece com `sk_test_` |
    | `STRIPE_WEBHOOK_SECRET` | Stripe → Webhooks → endpoint criado (§9.3), `whsec_...` |
@@ -256,7 +256,7 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
    | Variável | Valor |
    |---|---|
    | `VITE_SUPABASE_URL` | URL do projeto Supabase |
-   | `VITE_SUPABASE_ANON_KEY` | Chave `anon` (pública por desenho; a proteção são as políticas RLS) |
+   | `VITE_SUPABASE_ANON_KEY` | Chave `sb_publishable_...` (projetos novos) ou `anon` `eyJ...` (legada). Pública por desenho; a proteção são as políticas RLS |
    | `VITE_BILLING_ENABLED` | `true` só depois dos testes de cobrança (§9.3). Vazio = modo local |
    | `SUPABASE_URL` | Opcional; se vazio, usa `VITE_SUPABASE_URL` |
    | `STRIPE_PRICE_START`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_BUSINESS` | IDs dos preços mensais (`price_...`) |
@@ -268,12 +268,13 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
 
 ### 9.2 Supabase
 
-1. **Criar o projeto** na região `sa-east-1` (São Paulo). Guarde a senha do banco.
-2. **Rodar as migrações, uma vez e nesta ordem**, no SQL Editor ou com `supabase db push`:
+1. **Criar o projeto** na região `sa-east-1` (São Paulo). Guarde a senha do banco. Na criação, deixe **ligada** a opção *Automatically expose new tables* (Data API): as migrações dependem dos grants padrão e só revogam o acesso de `anon` onde necessário.
+2. **Rodar as migrações, uma vez e nesta ordem.** O caminho recomendado é o Supabase CLI, em vez de colar o SQL no SQL Editor: `npx supabase login`, `npx supabase link --project-ref <ref>` (pede a senha do banco), `npx supabase migration list --remote`, `npx supabase db push --remote --dry-run` e, se a lista estiver certa, `npx supabase db push --remote`. Se algum SQL já foi colado à mão antes, marque essas versões com `npx supabase migration repair --remote --status applied <versão>` em vez de rodá-las de novo. Use um só mecanismo daqui em diante: `db push` pelo CLI **ou** a integração do Supabase com o GitHub (*Deploy to production*), nunca os dois. O `supabase/config.toml` serve ao `supabase start` e ao `supabase test db` locais (passo 11). Ordem das migrações:
    1. `supabase/migrations/20261103000000_init.sql` (esquema e RLS)
    2. `supabase/migrations/20261103010000_reviews_staff_ai_events.sql` (equipe, revisões, eventos de IA)
    3. `supabase/migrations/20261103020000_security_hardening.sql` (permissões de coluna, RPCs restritas, limites de linha). Ao final, as restrições são criadas como `not valid`: depois de limpar dados antigos, rode `alter table ... validate constraint`.
    4. `supabase/migrations/20261103030000_usage_reservation.sql` (reserva atômica de cota)
+   5. `supabase/migrations/20261103040000_sync_limits.sql` (limites de tamanho dos dados sincronizados, medidos sem compressão)
 3. **Chaves JWT** (Project Settings → JWT Keys). Se o projeto usa chaves de assinatura assimétricas (ES256/RS256), **deixe `SUPABASE_JWT_SECRET` vazio**: a API verifica os tokens pela chave pública (`{SUPABASE_URL}/auth/v1/.well-known/jwks.json`). Se o segredo legado já estiver no GitHub ou no Worker, remova-o: `npx wrangler secret delete SUPABASE_JWT_SECRET`. Só projetos que ainda assinam com HS256 precisam dele.
 4. **Authentication → Sign In / Providers:** ative *Email*, mantenha **Confirm email** ligado (o app trata os dois casos) e **desligue** *Anonymous sign-ins* (o app não usa login anônimo).
 5. **Authentication → URL Configuration:** *Site URL* `https://voaneves.com/midflow-app/`. Em *Redirect URLs*, adicione exatamente `https://voaneves.com/midflow-app/` e `http://localhost:5173/`. A recuperação de senha volta para a raiz do app.
@@ -288,7 +289,7 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
    ```
 
    Alternativa sem SQL: com `ADMIN_TOKEN` configurado, `POST /api/admin/staff` com `{ "email": "...", "role": "admin" }` e o token no cabeçalho Bearer. A busca só encontra contas com e-mail confirmado. Depois disso, os admins adicionam editores pela aba Equipe.
-10. **Copiar as chaves** (Project Settings → API): a URL e a chave `anon` vão para as variáveis do GitHub (§9.1, passo 4); a chave `service_role` vai para o segredo `SUPABASE_SERVICE_ROLE_KEY`. Ela ignora o RLS: nunca a coloque em variável `VITE_*`.
+10. **Copiar as chaves** (Project Settings → API): a URL e a chave pública (`sb_publishable_...` em projetos novos, `anon` `eyJ...` em projetos legados) vão para as variáveis do GitHub (§9.1, passo 4); a chave secreta (`sb_secret_...` ou `service_role` `eyJ...`) vai para o segredo `SUPABASE_SERVICE_ROLE_KEY`. Os dois formatos funcionam (o servidor envia a chave nos cabeçalhos `apikey` e `Authorization`). Ela ignora o RLS: nunca a coloque em variável `VITE_*`.
 11. **Testar as políticas de acesso:** com o Supabase CLI, `supabase start`, `supabase db reset` (aplica as migrações) e `supabase test db` (roda `supabase/tests/rls.sql`). Esse teste não roda no CI e deve ser feito no banco local ou de uma branch, não no de produção.
 
 ### 9.3 Stripe
@@ -302,9 +303,13 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
 
+   Na nova tela de *event destinations* do Stripe, escolha *Your account*, *Snapshot payload* e mantenha a versão da API padrão.
+
    Copie o *Signing secret* (`whsec_...`) para o segredo `STRIPE_WEBHOOK_SECRET`.
+
+   A zona da Cloudflare não pode desafiar `/midflow-app/api/billing/webhook`: com Bot Fight Mode ou uma regra de WAF, o Stripe pode receber `403`. Crie uma regra de WAF que pule o caminho ou desligue o Bot Fight Mode (§9.4, passo 4).
 5. **Teste local:** com o servidor rodando (`npm start`), use `stripe listen --forward-to localhost:3000/api/billing/webhook` e faça uma compra de teste com um cartão de teste do Stripe. Confirme no painel do Stripe que o webhook responde `200`.
-6. **Customer Portal:** Settings → Billing → Customer portal. Habilite cancelamento e troca de plano, com os produtos da lista. Atenção: o app ainda não tem botão para abri-lo (§7), por isso troca de plano e cancelamento ainda não têm caminho dentro da app.
+6. **Customer Portal:** Settings → Billing → Customer portal. Habilite cancelamento e troca de plano, com os produtos da lista. O app já tem o botão "Gerenciar assinatura" (Planos e Configurações), que abre o portal pela rota `POST /api/billing/portal`; salve a configuração do portal uma vez antes de testar.
 7. **Radar:** mantenha as regras padrão ativas e acompanhe contestações (disputes) no painel.
 8. **Settings → Public details:** nome do negócio e e-mail de suporte, exibidos no Checkout.
 9. **Meios de pagamento:** assinaturas recorrentes usam cartão. Pix e boleto recorrentes precisam de avaliação separada.
@@ -315,7 +320,7 @@ Siga a ordem. Cada serviço depende do anterior: o GitHub precisa dos identifica
 1. **Tokens e IDs:** token de deploy "Edit Cloudflare Workers" (conta e zona voaneves.com), token "Workers AI" para as imagens e o Account ID, todos nos segredos do GitHub (§9.1).
 2. **Cabeçalhos do site:** o GitHub Pages não permite cabeçalhos próprios. Em Rules → Transform Rules → *Modify response header*, para o caminho `voaneves.com/midflow-app/*`, adicione `X-Frame-Options: DENY` e, se não houver outra CSP no cabeçalho, `Content-Security-Policy: frame-ancestors 'none'`. A `<meta>` de CSP não aceita `frame-ancestors`, por isso a regra é necessária.
 3. **Limite de borda como rede de segurança:** Security → WAF → Rate limiting rules. Para o caminho `/midflow-app/api/*`, use cerca de 30 requisições por 10 segundos por IP, com ação de bloqueio ou desafio. Os limites do Worker (§8) são mais específicos; esta regra só contém abuso. O plano gratuito tem janela de 10 s; confirme no painel.
-4. **Bot Fight Mode e desafios:** o teste de fumaça do deploy roda em runners do GitHub, que podem receber `403`. Isso não derruba o deploy (vira aviso). Para automatizar o teste, crie uma regra que pule o desafio em `/midflow-app/api/status`, ou verifique manualmente em `https://voaneves.com/midflow-app/api/status`.
+4. **Bot Fight Mode e desafios:** o teste de fumaça do deploy roda em runners do GitHub, que podem receber `403`. Isso não derruba o deploy (vira aviso). Para automatizar o teste, crie uma regra que pule o desafio em `/midflow-app/api/status` (o Stripe precisa do mesmo para `/midflow-app/api/billing/webhook`, §9.3), ou verifique manualmente em `https://voaneves.com/midflow-app/api/status`.
 5. **Workers AI:** acompanhe o consumo de neurons no painel do Workers AI e crie um alerta de cobrança em Billing → Notifications.
 6. **Durable Objects:** o binding `COUNTERS` usa SQLite (migração `v1` no `wrangler.jsonc`). Confirme que a conta aceita Durable Objects; sem eles, o teto diário de IA passa a ser por instância.
 7. **Observabilidade:** já ativada no `wrangler.jsonc`. Os logs ficam em Workers → midflow-api → Logs.
@@ -430,7 +435,7 @@ Limites na borda do Worker (bindings `ratelimits` no `wrangler.jsonc`, não são
 |---|---|---|
 | `VITE_API_URL` | Build | Caminho da API no build. O deploy usa `/midflow-app`; local fica vazio |
 | `VITE_SUPABASE_URL` | Build | URL do projeto Supabase. Vazio = modo local, sem contas |
-| `VITE_SUPABASE_ANON_KEY` | Build | Chave `anon`. Nunca a `service_role` |
+| `VITE_SUPABASE_ANON_KEY` | Build | Chave `sb_publishable_...` (ou `anon` `eyJ...` em projetos legados). Nunca a `sb_secret_...` nem a `service_role` |
 | `VITE_BILLING_ENABLED` | Build | `true` mostra o checkout real em Planos (exige conta) |
 
 Variáveis `VITE_*` são públicas. Nunca coloque segredo nelas.
@@ -507,7 +512,7 @@ Com o banco configurado, use `template` em produção: a demonstração continua
 ### 11.7 Retenção de dados
 
 - `EVENTS_RETENTION_DAYS=90` (padrão): eventos de `server/data/events.jsonl` com mais de 90 dias são apagados, no máximo uma vez por dia. As linhas de `ai_events` mais antigas são apagadas no máximo uma vez por dia. `0` mantém tudo.
-- **Pedidos de revisão e gerações** não têm rotina de exclusão automática. Defina o prazo na política de privacidade (§12) e aplique manualmente, ou crie uma rotina, antes do lançamento.
+- `REVIEWS_RETENTION_DAYS=365` (padrão): pedidos de revisão **resolvidos** (medidos a partir de `resolved_at`) mais antigos que isso são apagados do Supabase, no máximo uma vez por dia; pedidos abertos nunca são apagados e `0` mantém tudo. `GENERATIONS_RETENTION_DAYS` (padrão `0`, manter) faz o mesmo com as gerações sincronizadas. A rotina (`server/retention.ts`) roda dentro de uma requisição, no mesmo ciclo diário da poda de `ai_events`. Defina os prazos na política de privacidade (§12).
 - Para apagar dados de um cliente a pedido dele, use a exclusão de conta (§11.8), que cobre pedidos de revisão e gerações ligados à conta.
 
 ### 11.8 Exclusão de conta (LGPD)

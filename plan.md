@@ -257,7 +257,7 @@ Work delivered alongside the UX phases (see `docs/backend-integration.md` and `P
 | Edge limits | Done | Cloudflare Worker with Workers Rate Limiting (`RL_GENERATE`, `RL_IMAGE`, `RL_SENSITIVE`) and Durable Object counters for exact global daily AI caps; fail-open when a binding is missing |
 | Legal pages | Done, pending review | Privacy (`#/privacidade`) and Terms (`#/termos`) are published with marked fields still to fill in (company, CNPJ, DPO, retention, billing terms, venue) |
 | Supabase auth and sync | Done | E-mail and password sign-in, Google sign-in, password recovery (`#/esqueci-senha`, `#/nova-senha`), brand, generation and library sync with row-level security, column-level grants, asymmetric JWT verification |
-| Stripe billing | Done | Checkout for monthly and annual prices, signed and idempotent webhooks, server-side price mapping, plan quotas enforced with atomic reservation (`402 quota_exceeded`); no customer portal route yet |
+| Stripe billing | Done | Checkout for monthly and annual prices, signed and idempotent webhooks, server-side price mapping, plan quotas enforced with atomic reservation (`402 quota_exceeded`); customer portal via `POST /api/billing/portal` and the "Gerenciar assinatura" button (Plans and Settings) |
 | Account deletion | Done | LGPD flow with confirmation, Stripe cancellation before deletion, last-admin guard |
 | RBAC and staff panel | Done | `admin` and `editor` roles in `staff_members`, break-glass `ADMIN_TOKEN`, staff panel at `#/painel` with Reviews, AI health, Metrics and Team tabs (the last three admin only) |
 | Review queue | Done | Customer requests from the generation screen, assignment rules for editors, revisions, audit trail, "Minhas revisões" for customers |
