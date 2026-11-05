@@ -227,6 +227,12 @@ export function AiHealthPanel({ cred }: { cred: Credential }) {
                     <dt className="text-xs font-semibold text-fg-muted">Código</dt>
                     <dd className="break-all">{data.lastError.errorCode ?? '—'}</dd>
                   </div>
+                  {data.lastError.message && (
+                    <div>
+                      <dt className="text-xs font-semibold text-fg-muted">Mensagem</dt>
+                      <dd className="break-words">{data.lastError.message}</dd>
+                    </div>
+                  )}
                 </dl>
               ) : (
                 <p className="text-sm text-fg-subtle">Nenhum erro no período.</p>

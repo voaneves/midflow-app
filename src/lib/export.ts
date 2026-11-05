@@ -2,6 +2,8 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CreativeCanvas, type BrandMark } from '../components/creative/Creative'
 import { BASE_W, baseHeight } from '../components/creative/canvas'
+import { aiImageQueue, isAiImageUrl } from './imageQueue'
+import { photoUrl } from './photos'
 import { track } from './telemetry'
 import type { Creative, Palette, PostFormat, StyleId } from './types'
 
@@ -18,6 +20,9 @@ export interface ExportJob {
 export async function renderPng(job: ExportJob): Promise<string> {
   // Export libraries are only downloaded on the first export (keeps the initial bundle small).
   const { toPng } = await import('html-to-image')
+  // AI photos load one at a time through the shared queue; wait for this creative's here so the PNG never has a blank or stand-in image.
+  // The creatives on screen asked for the same URLs, so those are already loaded or in line (identical URLs share one load).
+  await aiImageQueue.settle([job.creative.photo, job.creative.photo2].map(photoUrl).filter((u): u is string => isAiImageUrl(u)))
   const H = baseHeight(job.creative.kind, job.format)
   const host = document.createElement('div')
   host.style.cssText = `position:fixed;left:-20000px;top:0;width:${BASE_W}px;height:${H}px;pointer-events:none;`

@@ -552,6 +552,8 @@ const routes: Record<string, Handler> = {
         engine: result.ai ? 'ai' : result.source === 'pixabay' || result.source === 'editorial-hd' ? 'stock' : 'procedural',
         latencyMs: Date.now() - imageStarted,
         errorCode: failure?.code ?? null,
+        // The provider's own short message ("Cloudflare 429 (3040): ...") explains the code in the admin panel.
+        errorDetail: failure && !imageCapped && imageHealth.lastErrorAt && imageHealth.lastErrorAt >= imageStarted ? imageHealth.lastError : null,
       })
     }
     res.statusCode = 200

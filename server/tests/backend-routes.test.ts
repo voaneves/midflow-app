@@ -837,7 +837,7 @@ test('ai-health: ai_events never contain prompts, briefing text, keys or provide
   assert.ok(!dump.includes('SEGREDO'))
   assert.ok(!dump.includes('AIza'))
   assert.ok(!dump.includes('Echo'))
-  const allowed = new Set(['created_at', 'route', 'provider', 'model', 'outcome', 'engine', 'latency_ms', 'quality_score', 'retries', 'error_code', 'user_id'])
+  const allowed = new Set(['created_at', 'route', 'provider', 'model', 'outcome', 'engine', 'latency_ms', 'quality_score', 'retries', 'error_code', 'error_detail', 'user_id'])
   for (const row of be.tables.ai_events) for (const k of Object.keys(row)) assert.ok(allowed.has(k), k)
   // The signed-in call is attributed to the account.
   assert.ok(be.tables.ai_events.some((r) => r.user_id === ids.customer))

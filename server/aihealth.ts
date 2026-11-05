@@ -2,12 +2,14 @@
  * AI health: one row per AI attempt (generate, rewrite, image) and the admin aggregation over them.
  *
  * Recording is fire-and-forget and can never fail or slow a request. Rows hold only short, fixed-vocabulary values
- * (route, outcome, engine, a coarse error code, numbers): never prompts, briefing text, provider messages or keys.
+ * (route, outcome, engine, a coarse error code, numbers): never prompts, briefing text or keys. The one free-text field,
+ * `error_detail`, is the provider's short error message (see sanitizeErrorDetail): at most 200 chars, no URLs or token-like strings.
  * Storage: Supabase table `ai_events` when configured (survives Worker restarts), otherwise the local event log.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { imageHealth } from './ai/image.ts'
 import { config, getDbConfig, imageModelName } from './config.ts'
-import { dbHeaders, dbRequest, type DbConfig, type Fetch } from './db/supabase.ts'
+import { DbError, dbHeaders, dbRequest, type DbConfig, type Fetch } from './db/supabase.ts'
 import { pruneRetention, resetRetentionPrune } from './retention.ts'
 import { logEvent, readEvents } from './telemetry.ts'
 
@@ -32,6 +34,8 @@ export interface AiCall {
   retries?: number
   /** One of the fixed codes above, or omitted. */
   errorCode?: string | null
+  /** Short provider message that explains the code (e.g. "Cloudflare 429 (3040): ..."). Sanitized on the way in. */
+  errorDetail?: string | null
   userId?: string | null
 }
 
@@ -46,6 +50,8 @@ export interface AiEventRow {
   quality_score: number | null
   retries: number
   error_code: string | null
+  /** Short provider message; absent on rows written before the column existed. */
+  error_detail?: string | null
   user_id: string | null
 }
 
@@ -55,8 +61,22 @@ const intOrNull = (v: unknown, min: number, max: number) => {
   return v !== null && v !== undefined && Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null
 }
 
+/** Short provider message for the admin panel: one line, no URLs, no token-like strings, at most 200 chars. */
+export function sanitizeErrorDetail(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const clean = v
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/\b(?:Bearer\s+)?[A-Za-z0-9_-]{32,}\b/g, '[redigido]')
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+  return clean || null
+}
+
 /** Builds the row that is stored. Anything outside the fixed vocabularies is dropped. */
 export function toAiEventRow(call: AiCall, now = new Date()): AiEventRow {
+  const detail = sanitizeErrorDetail(call.errorDetail)
   return {
     created_at: now.toISOString(),
     route: ROUTES.includes(call.route) ? call.route : 'generate',
@@ -68,6 +88,8 @@ export function toAiEventRow(call: AiCall, now = new Date()): AiEventRow {
     quality_score: intOrNull(call.qualityScore, 0, 100),
     retries: intOrNull(call.retries, 0, 20) ?? 0,
     error_code: call.errorCode && ERROR_CODES.includes(call.errorCode) ? call.errorCode : null,
+    // Only present when there is a message, so rows without one never depend on the column.
+    ...(detail ? { error_detail: detail } : {}),
     user_id: call.userId && UUID.test(call.userId) ? call.userId.toLowerCase() : null,
   }
 }
@@ -91,6 +113,11 @@ export function runInBackground(work: () => Promise<unknown>) {
 
 const DAY_MS = 86_400_000
 let lastPrune = 0
+/** False once the database rejected the `error_detail` column (migration not applied yet): rows are then stored without it. */
+let detailColumn = true
+
+/** PostgREST PGRST204 (insert) / Postgres 42703 (select): the column does not exist yet. */
+const isMissingColumn = (e: unknown) => e instanceof DbError && (e.code === 'PGRST204' || e.code === '42703')
 
 /** Records one AI attempt. Returns immediately. */
 export function recordAiCall(call: AiCall, f: Fetch = fetch) {
@@ -101,7 +128,20 @@ export function recordAiCall(call: AiCall, f: Fetch = fetch) {
       logEvent({ type: 'ai_call', ...row })
       return
     }
-    await dbRequest(db, 'ai_events', { method: 'POST', headers: dbHeaders(db, { Prefer: 'return=minimal' }), body: JSON.stringify(row) }, f)
+    const insert = (r: object) => dbRequest(db, 'ai_events', { method: 'POST', headers: dbHeaders(db, { Prefer: 'return=minimal' }), body: JSON.stringify(r) }, f)
+    if (detailColumn) {
+      try {
+        await insert(row)
+      } catch (e) {
+        if (!isMissingColumn(e)) throw e
+        detailColumn = false
+        const { error_detail: _dropped, ...legacy } = row
+        await insert(legacy)
+      }
+    } else {
+      const { error_detail: _dropped, ...legacy } = row
+      await insert(legacy)
+    }
     const now = Date.now()
     if (config.eventsRetentionDays > 0 && now - lastPrune > DAY_MS) {
       lastPrune = now
@@ -116,6 +156,7 @@ export function recordAiCall(call: AiCall, f: Fetch = fetch) {
 /** Test hook: lets the daily prune run again. */
 export function resetAiPrune() {
   lastPrune = 0
+  detailColumn = true
   resetRetentionPrune()
 }
 
@@ -192,7 +233,9 @@ export function aggregateAiHealth(rows: AiEventRow[], range: AiRange, now: numbe
       images: { used: used('image'), max: Number.isFinite(extras.maxImages) ? extras.maxImages : null },
     },
     providers: extras.providers,
-    lastError: lastErr ? { at: Date.parse(lastErr.created_at), route: lastErr.route, outcome: lastErr.outcome, errorCode: lastErr.error_code } : null,
+    lastError: lastErr
+      ? { at: Date.parse(lastErr.created_at), route: lastErr.route, outcome: lastErr.outcome, errorCode: lastErr.error_code, message: sanitizeErrorDetail(lastErr.error_detail) }
+      : null,
     series: [...buckets.entries()].map(([t, rs]) => ({
       bucket: new Date(t).toISOString(),
       calls: rs.length,
@@ -212,8 +255,20 @@ const PAGE = 1000
 const MAX_PAGES = 20
 
 async function loadRowsFromDb(db: DbConfig, since: number, f: Fetch): Promise<AiEventRow[]> {
-  const cols = 'created_at,route,provider,model,outcome,engine,latency_ms,quality_score,retries,error_code,user_id'
+  try {
+    return await loadPages(db, since, f, detailColumn)
+  } catch (e) {
+    // Column not created yet (migration pending): read again without it.
+    if (!detailColumn || !isMissingColumn(e)) throw e
+    detailColumn = false
+    return loadPages(db, since, f, false)
+  }
+}
+
+async function loadPages(db: DbConfig, since: number, f: Fetch, withDetail: boolean): Promise<AiEventRow[]> {
+  const baseCols = 'created_at,route,provider,model,outcome,engine,latency_ms,quality_score,retries,error_code,user_id'
   const out: AiEventRow[] = []
+  const cols = withDetail ? `${baseCols},error_detail` : baseCols
   // Supabase caps a response at 1000 rows by default, so the window is read page by page (bounded).
   for (let page = 0; page < MAX_PAGES; page++) {
     const rows = (await dbRequest(
@@ -247,10 +302,16 @@ export async function loadAiHealth(range: AiRange, f: Fetch = fetch, now = Date.
   const db = getDbConfig()
   const since = now - Math.max(RANGE_MS[range], DAY_MS)
   const rows = db ? await loadRowsFromDb(db, since, f) : loadRowsFromEvents(since)
-  return aggregateAiHealth(rows, range, now, db ? 'supabase' : 'events', {
+  const health = aggregateAiHealth(rows, range, now, db ? 'supabase' : 'events', {
     providers: providerSummary(),
     maxText: config.limits.dailyMaxText,
     maxImages: config.limits.dailyMaxImages,
     maxRewrite: config.limits.dailyMaxRewrite,
   })
+  // Rows stored before the error_detail column existed carry no message: this instance may still remember the last image error.
+  const last = health.lastError
+  if (last && !last.message && last.route === 'image' && imageHealth.lastErrorAt && Math.abs(imageHealth.lastErrorAt - last.at) < 60_000) {
+    last.message = sanitizeErrorDetail(imageHealth.lastError)
+  }
+  return health
 }

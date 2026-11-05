@@ -121,7 +121,7 @@ export interface AiHealth {
   images: { ai: number; stock: number; procedural: number }
   dailyCap: { text: { used: number; max: number | null }; images: { used: number; max: number | null } }
   providers: { name: string; configured: boolean; model: string | null }[]
-  lastError: { at: number; route: string; outcome: string; errorCode: string | null } | null
+  lastError: { at: number; route: string; outcome: string; errorCode: string | null; message?: string | null } | null
   series: { bucket: string; calls: number; ok: number; fallback: number; p95: number | null }[]
 }
 

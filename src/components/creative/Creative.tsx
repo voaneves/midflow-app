@@ -4,6 +4,7 @@ import {
   PawPrint, Quote, Scissors, Send, Shield, Smile, Sparkles, Star, Sun, TrendingUp, User, Utensils, Zap,
 } from 'lucide-react'
 import { alpha, luminance, mix, readableOn, saturation } from '../../lib/color'
+import { aiImageQueue, isAiImageUrl } from '../../lib/imageQueue'
 import { photoFocus, PHOTOS, photoUrl } from '../../lib/photos'
 import type { Creative as CreativeT, Palette, PostFormat, StyleId } from '../../lib/types'
 import { BASE_W, baseHeight, creativeLabel } from './canvas'
@@ -310,10 +311,26 @@ function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
       report(key, false)
     }
   }, [busy, key, report])
+  // AI images load one at a time (lib/imageQueue.ts): the <img> only gets its src once the file is in the browser cache.
+  const queued = !!url && isAiImageUrl(url)
+  const [readyUrl, setReadyUrl] = useState<string>()
+  const ready = !queued || readyUrl === url || aiImageQueue.isReady(url)
+  const onFail = useRef<() => void>(() => {})
+  useEffect(() => {
+    if (!url || !queued || aiImageQueue.isReady(url)) return
+    const ctl = new AbortController()
+    aiImageQueue.load(url, ctl.signal).then(
+      () => setReadyUrl(url),
+      () => {
+        if (!ctl.signal.aborted) onFail.current()
+      },
+    )
+    return () => ctl.abort() // unmounted (or another image): a queued one is dropped, nothing is generated for it
+  }, [url, queued])
   // Already decoded before React attached onLoad (memory/HTTP cache).
   useEffect(() => {
-    if (img.current?.complete && img.current.naturalWidth > 0) setBusy(false)
-  }, [url])
+    if (ready && img.current?.complete && img.current.naturalWidth > 0) setBusy(false)
+  }, [url, ready])
   // Retry on a timer while it keeps failing.
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -326,7 +343,26 @@ function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
     return () => window.clearTimeout(t)
   }, [failed, attempt])
 
+  // Same path for an <img> error and for a failed queued load: the card's own stock photo first, then retries.
+  const fail = () => {
+    if (!fallbackUsed && fallbackUrl) setFallbackUsed(true)
+    else if (isApi || fallbackUsed) {
+      if (fallbackUsed) setFallbackUsed(false)
+      setFailed(true)
+    } else setBusy(false)
+  }
+  useEffect(() => {
+    onFail.current = fail
+  })
+
   if (!url) return <div style={{ background: 'linear-gradient(135deg,#d9e6e2,#b8cfc8)', ...style }} />
+  // Waiting for its turn: the card's stock photo (or a plain gradient) holds the space, so the layout does not move when the AI image arrives.
+  if (!ready)
+    return fallbackUrl ? (
+      <img src={fallbackUrl} alt="" data-photo-pending="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: photoFocus(id), display: 'block', ...style }} />
+    ) : (
+      <div data-photo-pending="" style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#d9e6e2,#b8cfc8)', ...style }} />
+    )
   return (
     <img
       ref={img}
@@ -334,14 +370,7 @@ function Photo({ id, style }: { id?: string; style?: CSSProperties }) {
       alt=""
       crossOrigin="anonymous"
       onLoad={() => setBusy(false)}
-      onError={() => {
-        // 1st: the local photo picked for this card. Then keep retrying the generated image.
-        if (!fallbackUsed && fallbackUrl) setFallbackUsed(true)
-        else if (isApi || fallbackUsed) {
-          if (fallbackUsed) setFallbackUsed(false)
-          setFailed(true)
-        } else setBusy(false)
-      }}
+      onError={fail}
       style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: photoFocus(id), display: 'block', ...style }}
     />
   )
