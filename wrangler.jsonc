@@ -19,11 +19,15 @@
     // Gemini 3+ reasoning depth. The model default thinks for tens of seconds on the full pack.
     "AI_THINKING_LEVEL": "low",
     "AI_MAX_RETRIES": "1",
+    // AI images from Gemini (Nano Banana 2 Lite, ~US$ 0.034/image, paid tier only). Workers AI hit its free daily cap.
+    "IMAGE_PROVIDER": "gemini",
+    "AI_IMAGE_MODEL": "gemini-3.1-flash-lite-image",
     // Take the client IP only from CF-Connecting-IP (set by Cloudflare), never from a spoofable X-Forwarded-For.
     "TRUST_PROXY": "cloudflare",
     // Global daily ceilings on paid AI calls (all visitors together, per UTC day); over them the honest template/stock fallback answers.
     "AI_DAILY_MAX_TEXT": "500",
-    "AI_DAILY_MAX_IMAGES": "1500",
+    // 300 Gemini images ≈ US$ 10/day at most (about 37 full packs).
+    "AI_DAILY_MAX_IMAGES": "300",
     // Rewrites have their own global budget (so they cannot starve /api/generate); per-account caps per UTC day.
     "AI_DAILY_MAX_REWRITE": "300",
     "AI_DAILY_MAX_REWRITE_PER_USER": "60",
